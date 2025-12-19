@@ -1,0 +1,8 @@
+services:
+  math:
+    build: .
+    container_name: handwritten-math
+    command: >
+      mvn -q exec:java
+      -Dexec.mainClass=io.DemoBatchEval
+      -Dexec.args="tests/phase1_tests.csv"

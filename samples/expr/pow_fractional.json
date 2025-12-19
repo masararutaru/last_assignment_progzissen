@@ -1,0 +1,11 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Pow",
+      "args": [
+        { "type": "Num", "value": 4 },
+        { "type": "Num", "value": 0.5 }
+      ]
+    }
+  }
+

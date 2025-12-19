@@ -1,0 +1,12 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Func",
+      "name": "sub",
+      "args": [
+        { "type": "Num", "value": 5 },
+        { "type": "Num", "value": 2 }
+      ]
+    }
+  }
+

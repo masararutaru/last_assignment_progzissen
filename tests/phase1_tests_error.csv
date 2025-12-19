@@ -1,0 +1,6 @@
+file,x,expected_error
+samples/expr/div_zero.json,0,division by zero
+samples/expr/func_unknown.json,0,Unknown func
+samples/expr/div_arity_error.json,0,Div needs 2 args
+samples/expr/func_arity_error.json,0,Func needs 1 arg
+

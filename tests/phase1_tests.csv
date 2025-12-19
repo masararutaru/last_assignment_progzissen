@@ -1,0 +1,26 @@
+file,x,expected,tol
+samples/expr/add_mul.json,1,7,1e-9
+samples/expr/div.json,1,3,1e-9
+samples/expr/pow.json,2,8,1e-9
+samples/expr/func_sqrt.json,0,3,1e-9
+samples/expr/func_sin.json,0,0,1e-9
+samples/expr/func_cos.json,0,1,1e-9
+samples/expr/func_exp.json,0,2.718281828459045,1e-9
+samples/expr/func_log.json,0,1,1e-9
+# 追加テストケース
+samples/expr/add_negative.json,-1,-2,1e-9
+samples/expr/add_negative.json,0.5,-0.5,1e-9
+samples/expr/add_three.json,0,6,1e-9
+samples/expr/mul_three.json,0,24,1e-9
+samples/expr/func_composite.json,0,0.8414709848078965,1e-9
+samples/expr/func_composite.json,1,0.410781290502909,1e-9
+samples/expr/pow_fractional.json,0,2,1e-9
+samples/expr/pow_negative.json,0,0.5,1e-9
+samples/expr/div_complex.json,1,1,1e-9
+samples/expr/div_complex.json,2,1.3333333333333333,1e-9
+samples/expr/func_log_composite.json,0,0.6931471805599453,1e-9
+samples/expr/func_log_composite.json,1,1.3132616875182228,1e-9
+samples/expr/pow_complex.json,1,4,1e-9
+samples/expr/pow_complex.json,2,81,1e-9
+samples/expr/func_sub.json,0,3,1e-9
+samples/expr/func_neg.json,0,-3,1e-9

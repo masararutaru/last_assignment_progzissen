@@ -1,0 +1,217 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "MathExpressionAST_v1",
+    "type": "object",
+    "required": ["version", "expr"],
+    "additionalProperties": false,
+    "properties": {
+      "version": { "type": "integer", "const": 1 },
+      "source": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model": { "type": "string" },
+          "ts": { "type": "string" }
+        }
+      },
+      "expr": { "$ref": "#/definitions/Expr" }
+    },
+  
+    "definitions": {
+      "Expr": { "$ref": "#/definitions/ExprAny" },
+  
+      "ExprAny": {
+        "oneOf": [
+          { "$ref": "#/definitions/Num" },
+          { "$ref": "#/definitions/Sym" },
+          { "$ref": "#/definitions/Add" },
+          { "$ref": "#/definitions/Mul" },
+          { "$ref": "#/definitions/Div" },
+          { "$ref": "#/definitions/Pow" },
+          { "$ref": "#/definitions/Sqrt" },
+          { "$ref": "#/definitions/Func" },
+          { "$ref": "#/definitions/Ambiguity" },
+  
+          { "$ref": "#/definitions/Deriv" },
+          { "$ref": "#/definitions/Int" },
+          { "$ref": "#/definitions/Laplace" },
+          { "$ref": "#/definitions/Mat" },
+          { "$ref": "#/definitions/Det" }
+        ]
+      },
+  
+      "Num": {
+        "type": "object",
+        "required": ["type", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Num" },
+          "value": { "type": "number" }
+        }
+      },
+  
+      "Sym": {
+        "type": "object",
+        "required": ["type", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Sym" },
+          "name": { "type": "string" }
+        }
+      },
+  
+      "Add": {
+        "type": "object",
+        "required": ["type", "args"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Add" },
+          "args": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "$ref": "#/definitions/ExprAny" }
+          }
+        }
+      },
+  
+      "Mul": {
+        "type": "object",
+        "required": ["type", "args"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Mul" },
+          "args": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "$ref": "#/definitions/ExprAny" }
+          }
+        }
+      },
+  
+      "Div": {
+        "type": "object",
+        "required": ["type", "num", "den"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Div" },
+          "num": { "$ref": "#/definitions/ExprAny" },
+          "den": { "$ref": "#/definitions/ExprAny" }
+        }
+      },
+  
+      "Pow": {
+        "type": "object",
+        "required": ["type", "base", "exp"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Pow" },
+          "base": { "$ref": "#/definitions/ExprAny" },
+          "exp": { "$ref": "#/definitions/ExprAny" }
+        }
+      },
+  
+      "Sqrt": {
+        "type": "object",
+        "required": ["type", "arg"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Sqrt" },
+          "arg": { "$ref": "#/definitions/ExprAny" }
+        }
+      },
+  
+      "Func": {
+        "type": "object",
+        "required": ["type", "name", "args"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Func" },
+          "name": { "type": "string" },
+          "args": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/definitions/ExprAny" }
+          }
+        }
+      },
+  
+      "Ambiguity": {
+        "type": "object",
+        "required": ["type", "reason", "candidates"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Ambiguity" },
+          "reason": { "type": "string" },
+          "candidates": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "$ref": "#/definitions/ExprAny" }
+          }
+        }
+      },
+  
+      "Deriv": {
+        "type": "object",
+        "required": ["type", "var", "expr"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Deriv" },
+          "var": { "type": "string" },
+          "expr": { "$ref": "#/definitions/ExprAny" }
+        }
+      },
+  
+      "Int": {
+        "type": "object",
+        "required": ["type", "var", "lower", "upper", "expr"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Int" },
+          "var": { "type": "string" },
+          "lower": { "$ref": "#/definitions/ExprAny" },
+          "upper": { "$ref": "#/definitions/ExprAny" },
+          "expr": { "$ref": "#/definitions/ExprAny" }
+        }
+      },
+  
+      "Laplace": {
+        "type": "object",
+        "required": ["type", "var", "expr"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Laplace" },
+          "var": { "type": "string" },
+          "expr": { "$ref": "#/definitions/ExprAny" }
+        }
+      },
+  
+      "Mat": {
+        "type": "object",
+        "required": ["type", "rows"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Mat" },
+          "rows": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/ExprAny" }
+            }
+          }
+        }
+      },
+  
+      "Det": {
+        "type": "object",
+        "required": ["type", "arg"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "const": "Det" },
+          "arg": { "$ref": "#/definitions/ExprAny" }
+        }
+      }
+    }
+  }
+  

@@ -1,0 +1,5 @@
+{
+    "version": 1,
+    "expr": { "type": "Func", "name": "exp", "args": [{ "type": "Num", "value": 1 }] }
+  }
+  

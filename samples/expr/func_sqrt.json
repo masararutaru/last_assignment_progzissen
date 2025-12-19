@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "expr": {
+    "type": "Func",
+    "name": "sqrt",
+    "args": [
+      { "type": "Num", "value": 9 }
+    ]
+  }
+}

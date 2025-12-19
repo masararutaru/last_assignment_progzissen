@@ -1,0 +1,23 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Pow",
+      "args": [
+        {
+          "type": "Add",
+          "args": [
+            { "type": "Sym", "name": "x" },
+            { "type": "Num", "value": 1 }
+          ]
+        },
+        {
+          "type": "Mul",
+          "args": [
+            { "type": "Num", "value": 2 },
+            { "type": "Sym", "name": "x" }
+          ]
+        }
+      ]
+    }
+  }
+

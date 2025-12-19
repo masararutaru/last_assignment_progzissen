@@ -1,0 +1,21 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Func",
+      "name": "log",
+      "args": [
+        {
+          "type": "Add",
+          "args": [
+            { "type": "Num", "value": 1 },
+            {
+              "type": "Func",
+              "name": "exp",
+              "args": [{ "type": "Sym", "name": "x" }]
+            }
+          ]
+        }
+      ]
+    }
+  }
+

@@ -1,0 +1,15 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Func",
+      "name": "sin",
+      "args": [
+        {
+          "type": "Func",
+          "name": "exp",
+          "args": [{ "type": "Sym", "name": "x" }]
+        }
+      ]
+    }
+  }
+

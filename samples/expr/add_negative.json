@@ -1,0 +1,11 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Add",
+      "args": [
+        { "type": "Sym", "name": "x" },
+        { "type": "Num", "value": -1 }
+      ]
+    }
+  }
+

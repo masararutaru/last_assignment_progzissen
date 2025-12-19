@@ -1,0 +1,11 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Div",
+      "args": [
+        { "type": "Num", "value": 1 },
+        { "type": "Num", "value": 0 }
+      ]
+    }
+  }
+

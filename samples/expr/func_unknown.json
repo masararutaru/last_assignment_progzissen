@@ -1,0 +1,9 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Func",
+      "name": "laplace",
+      "args": [{ "type": "Num", "value": 1 }]
+    }
+  }
+

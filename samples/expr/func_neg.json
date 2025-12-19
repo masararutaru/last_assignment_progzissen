@@ -1,0 +1,11 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Func",
+      "name": "neg",
+      "args": [
+        { "type": "Num", "value": 3 }
+      ]
+    }
+  }
+

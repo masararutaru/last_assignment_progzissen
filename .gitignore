@@ -1,0 +1,50 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# コンパイル済みファイル
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ログファイル
+*.log
+
+# 一時ファイル
+*.tmp
+*.bak
+*.swp
+*~
+
+# テスト結果
+test-results/
+*.test
+
+# その他
+*.orig
+

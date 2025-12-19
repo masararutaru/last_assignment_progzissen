@@ -1,0 +1,12 @@
+{
+    "version": 1,
+    "expr": {
+      "type": "Mul",
+      "args": [
+        { "type": "Num", "value": 2 },
+        { "type": "Num", "value": 3 },
+        { "type": "Num", "value": 4 }
+      ]
+    }
+  }
+
