@@ -109,6 +109,7 @@ Java
 
 ## 6. プロジェクト構成
 
+```
 project-root/
 ├─ README.md
 ├─ pom.xml # Maven設定ファイル
@@ -160,12 +161,15 @@ project-root/
           # ├─ onnx/ # ONNX Runtime 呼び出し
           # ├─ parse/ # 推論結果 → AST 生成
           # └─ eval/ # 数値評価器
+```
 
 # ※提出物外（事前準備）
-# python/ # PyTorch 学習コード（提出物外）
-#   ├─ train/ # PyTorch 学習コード
-#   └─ export_onnx.py # ONNX書き出し
 
+```
+python/ # PyTorch 学習コード（提出物外）
+   ├─ train/ # PyTorch 学習コード
+   └─ export_onnx.py # ONNX書き出し
+```
 
 
 ---
