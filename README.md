@@ -266,7 +266,7 @@ docker compose exec math bash
 
 コンテナ内で以下のコマンドを実行できます：
 
-#### ビルド
+#### ビルド(コード書き直したらbashないでこのコマンドを打つと反映される)
 
 ```bash
 mvn -q -DskipTests package

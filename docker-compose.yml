@@ -4,4 +4,10 @@ services:
     container_name: handwritten-math
     tty: true
     stdin_open: true
+    volumes:
+      - .:/app
+      - m2:/root/.m2
     command: ["bash", "-lc", "sleep infinity"]
+
+volumes:
+  m2:
