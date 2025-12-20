@@ -248,13 +248,49 @@ project-root/
 
 ---
 
-## 11. 実行方法（Phase 0）
+## 11. 実行方法
 
-Docker を使用する。
+### Dockerコンテナの起動
 
 ```bash
-docker compose build
-docker compose up
+docker compose up --build -d
+```
+
+### コンテナに入る
+
+```bash
+docker compose exec math bash
+```
+
+### コンテナ内での実行
+
+コンテナ内で以下のコマンドを実行できます：
+
+#### ビルド
+
+```bash
+mvn -q -DskipTests package
+```
+
+#### Phase1: JSONファイルからASTを読み込んで評価
+
+```bash
+mvn -q exec:java -Dexec.mainClass=io.DemoLoadEval -Dexec.args="samples/expr/add_mul.json"
+```
+
+#### Phase1.5: 式文字列をパースして評価
+
+```bash
+mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="1+2*3"
+mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="sin(exp(x))"
+mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="-(1+2)*3"
+```
+
+### コンテナから出る・終了
+
+```bash
+exit                    # コンテナから出る
+docker compose down      # コンテナを停止・削除
 ```
 
 ## 12. Maven（mvn）の使い方
@@ -264,7 +300,7 @@ Pythonにおける `pip + requirements.txt` に相当する役割を、`pom.xml`
 
 ---
 
-### 1. Mavenの役割
+### Mavenの役割
 
 Mavenは以下を自動で行う：
 
@@ -280,17 +316,10 @@ Mavenは以下を自動で行う：
 
 ---
 
-### 3. 依存関係の取得
+### 依存関係の取得
 
 ```bash
 mvn dependency:resolve
-```
-
-####実行方法
-```bash
-mvn exec:java \
-  -Dexec.mainClass=io.DemoLoadEval \
-  -Dexec.args="samples/expr/add_mul.json"
 ```
 
 
