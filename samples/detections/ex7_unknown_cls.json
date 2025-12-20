@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "imageSize": {"w": 800, "h": 600},
+  "detections": [
+    {"cls": "1", "score": 0.98, "bbox": [ 80, 250, 120, 310 ]},
+    {"cls": "+", "score": 0.95, "bbox": [140, 260, 170, 300 ]},
+    {"cls": "unknown_symbol", "score": 0.85, "bbox": [190, 250, 230, 310 ]},
+    {"cls": "2", "score": 0.97, "bbox": [250, 250, 290, 310 ]}
+  ]
+}

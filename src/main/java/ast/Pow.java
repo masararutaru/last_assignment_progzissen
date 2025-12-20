@@ -18,4 +18,8 @@ public class Pow implements Expr {
     public double eval(double x) {
         return Math.pow(base.eval(x), exp.eval(x));
     }
+
+    // JSON変換用のgetter
+    public Expr getBase() { return base; }
+    public Expr getExp() { return exp; }
 }

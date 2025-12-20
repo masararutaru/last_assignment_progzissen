@@ -53,4 +53,8 @@ public class Func implements Expr {
                 throw new IllegalArgumentException("Unknown func: " + name);
         }
     }
+
+    // JSON変換用のgetter
+    public String getName() { return name; }
+    public List<Expr> getArgs() { return args; }
 }

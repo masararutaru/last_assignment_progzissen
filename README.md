@@ -132,9 +132,10 @@ project-root/
 │   ├─ div.json
 │   ├─ func_sin.json
 │   └─ pow.json
+│   ├─ expr/ # AST(JSON) サンプル
+│   └─ detections/ # 推論結果（bbox + cls）サンプル（今後追加予定）
 │   # 以下は今後追加予定
 │   # ├─ images/ # 手書き入力サンプル
-│   # ├─ detections/ # 推論結果（bbox + cls）
 │   # └─ result/ # 計算結果サンプル
 │
 ├─ tests/ # テストファイル（今後追加予定）
@@ -153,14 +154,25 @@ project-root/
       │   ├─ Pow.java
       │   └─ Func.java
       │
+      ├─ parse/ # 推論結果 → AST 生成
+      │   ├─ Parser.java # 文字列パーサ（Phase 1.5）
+      │   ├─ Tokenizer.java # トークナイザ
+      │   ├─ Token.java # トークン定義
+      │   ├─ BBox.java # バウンディングボックス
+      │   ├─ DetSymbol.java # 検出シンボル
+      │   ├─ Detection.java # 検出結果
+      │   ├─ LabelMap.java # クラス名→トークンマッピング
+      │   ├─ DetectionJson.java # 推論結果JSON読み込み
+      │   ├─ SpatialToExpr.java # 空間配置→式文字列変換
+      │   └─ DemoDetectionsToAst.java # デモ: 推論結果→AST
+      │
       └─ io/ # JSON読み書き
           ├─ AstJson.java
-          └─ DemoLoadEval.java
+          ├─ DemoLoadEval.java
+          └─ DemoParseEval.java
           # 以下は今後追加予定
           # ├─ ui/ # お絵描きUI
-          # ├─ onnx/ # ONNX Runtime 呼び出し
-          # ├─ parse/ # 推論結果 → AST 生成
-          # └─ eval/ # 数値評価器
+          # └─ onnx/ # ONNX Runtime 呼び出し
 ```
 
 # ※提出物外（事前準備）
@@ -302,6 +314,14 @@ mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="sin(exp(x))"
 mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="-(1+2)*3"
 ```
 
+#### Phase 1.5: AST ↔ JSON 往復変換のテスト
+
+```bash
+mvn -q exec:java -Dexec.mainClass=io.DemoJsonRoundTrip -Dexec.args="samples/expr/add_mul.json"
+```
+
+このデモは、JSON → AST → JSON の往復変換が正しく動作することを確認します。GUIで計算過程を表示する際に使用します。
+
 ### コンテナから出る・終了
 
 ```bash
@@ -365,6 +385,7 @@ mvn dependency:resolve
 
 ## 13. 進捗
 
+### Phase 1: 完了
 phase1まで完了
 
 ```bash
@@ -380,3 +401,117 @@ handwritten-math  |
 handwritten-math  | RESULT: ok=8 ng=0 total=8
 handwritten-math exited with code 0
 ```
+
+### Phase 1.5: 推論結果からAST生成の基盤実装（進行中）
+
+推論結果（bbox + クラス）から数式ASTを生成するための基盤クラスを実装しました。
+
+#### 実装したクラス
+
+1. **`parse/BBox.java`**
+   - バウンディングボックスを表現するクラス
+   - 幅・高さ・中心座標の計算メソッド
+   - X/Y方向の重なり判定メソッド
+
+2. **`parse/DetSymbol.java`**
+   - 検出されたシンボル（記号）を表現するクラス
+   - クラス名、正規化トークン、スコア、バウンディングボックスを保持
+
+3. **`parse/Detection.java`**
+   - 画像全体の検出結果を表現するクラス
+   - 画像サイズと検出シンボルのリストを保持
+
+4. **`parse/LabelMap.java`**
+   - ONNXモデルのクラス名から式トークンへのマッピングを管理
+   - 例: `"digit_3"` → `"3"`, `"plus"` → `"+"`, `"sin"` → `"sin"`
+   - 既にトークン形式のクラス名もそのまま通す機能あり
+
+5. **`parse/DetectionJson.java`**
+   - JSON形式の推論結果を読み込むクラス
+   - `org.json` を使用してJSONをパース
+   - `LabelMap` を使ってクラス名をトークンに変換
+
+6. **`parse/SpatialToExpr.java`**
+   - 空間的な検出結果から式文字列を構築するコアクラス
+   - 主な機能:
+     - スコア閾値によるフィルタリング
+     - X座標によるソート（同一行を仮定）
+     - べき乗（右上の小さな記号）の検出と `^(...)` 形式への変換
+     - 暗黙の掛け算の挿入（例: `2x` → `2*x`, `)(` → `)*(`）
+     - 括弧のバランスチェック
+
+7. **`parse/DemoDetectionsToAst.java`**
+   - 推論結果JSONからASTを生成して評価するデモクラス
+   - 使用例: `java parse.DemoDetectionsToAst samples/detections/example.json`
+
+#### 現状
+
+- ✅ 推論結果JSONの読み込み機能
+- ✅ 空間的な配置から式文字列への変換ロジック
+- ✅ 既存の `parse.Parser` との統合
+- ✅ AST → JSON 変換機能（`AstJson.toJsonV1`）を実装
+  - GUIでの計算過程表示やデバッグに有用
+  - すべてのASTノードタイプ（Num, Sym, Add, Mul, Div, Pow, Func）に対応
+  - JSON → AST → JSON の往復変換が可能
+- ⚠️ ONNX推論との接続は未実装（次フェーズ）
+
+#### 推論結果JSONフォーマット
+
+推論結果JSONは以下の形式です：
+
+```json
+{
+  "version": 1,
+  "imageSize": {"w": 800, "h": 600},
+  "detections": [
+    {"cls": "1", "score": 0.98, "bbox": [ 80, 250, 120, 310 ]},
+    {"cls": "+", "score": 0.95, "bbox": [140, 260, 170, 300 ]},
+    {"cls": "2", "score": 0.97, "bbox": [190, 250, 230, 310 ]},
+    {"cls": "*", "score": 0.93, "bbox": [260, 265, 290, 295 ]},
+    {"cls": "3", "score": 0.99, "bbox": [310, 250, 350, 310 ]}
+  ]
+}
+```
+
+- `version`: バージョン番号（現在は1）
+- `imageSize`: 画像サイズ（`w`: 幅, `h`: 高さ）
+- `detections`: 検出結果の配列
+  - `cls`: クラス名（例: `"1"`, `"+"`, `"digit_3"`, `"sin"` など）
+  - `score`: 信頼度スコア（0.0〜1.0）
+  - `bbox`: バウンディングボックス `[x1, y1, x2, y2]`（左上と右下の座標）
+
+#### サンプルファイル
+
+`samples/detections/` ディレクトリに以下のサンプルを配置：
+
+- **`ex1_add_mul.json`** - 基本的な加算・乗算（`1+2*3`）
+- **`ex2_2x_plus_3.json`** - 暗黙の掛け算（`2x+3`）
+- **`ex3_paren_mul.json`** - 括弧と掛け算（`(1+2)*3`）
+- **`ex4_x_pow_2_plus_1.json`** - べき乗（`x^2+1`）
+- **`ex5_2_paren_x_plus_1.json`** - 暗黙の掛け算と括弧（`2(x+1)`）
+- **`ex6_sin_x_plus_1.json`** - 関数（`sin(x)+1`）
+- **`ex7_unknown_cls.json`** - 不明なクラス名の警告テスト
+- **`ex8_low_score.json`** - 低スコアシンボルのフィルタリングテスト
+
+これらのサンプルで `SpatialToExpr` の限界や警告機能を確認できます。
+
+#### Warnings 機能
+
+`SpatialToExpr` と `DetectionJson` は以下の警告を出力します：
+
+- **低スコアシンボルのフィルタリング**: `dropped digits: N, dropped operators: M, dropped funcs: K (threshold=0.20)`（種類別にカウント）
+- **不明なクラス名**: `unknown class label: 'xxx' (score=0.xx, bbox=[...]), skipped`
+- **複数の exponent 候補**: `multiple exponent candidates detected (N symbols), using all`
+- **括弧のバランス**: `unbalanced parentheses (maybe detection miss)`
+
+出力順序は `[warn]` → `[expr]` → `[eval]` → `[ast-json]` で、「なぜこうなった？」が一発で分かる構成になっています。
+
+これらの警告は GUI で「曖昧です」と表示する際に使用できます。
+
+#### 次のステップ
+
+1. ✅ `samples/detections/` ディレクトリに推論結果JSONのサンプルを配置済み
+2. ✅ Warnings 機能を実装済み（種類別カウント、出力順序最適化）
+3. ✅ `DemoDetectionsToAst` で動作確認済み（全サンプルで期待通りの結果を出力）
+4. ONNX推論実装との統合
+5. GUIとの統合

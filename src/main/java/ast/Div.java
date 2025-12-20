@@ -23,4 +23,8 @@ public class Div implements Expr {
         }
         return a / b;
     }
+
+    // JSON変換用のgetter
+    public Expr getLeft() { return left; }
+    public Expr getRight() { return right; }
 }
