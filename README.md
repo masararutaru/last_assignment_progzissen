@@ -280,6 +280,18 @@ mvn -q exec:java -Dexec.mainClass=io.DemoLoadEval -Dexec.args="samples/expr/add_
 
 #### Phase1.5: 式文字列をパースして評価
 
+**推奨：`run.sh` スクリプトを使用（簡単）**
+
+```bash
+./run.sh "1+2*3"
+./run.sh "sin(exp(x))"
+./run.sh "-(1+2)*3"
+```
+
+`run.sh` は自動でビルドと実行を行います。毎回 `mvn package` と `mvn exec:java` を手動で実行する必要がありません。
+
+**従来の方法（直接Mavenコマンドを実行）**
+
 ```bash
 mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="1+2*3"
 mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="sin(exp(x))"
@@ -291,6 +303,27 @@ mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="-(1+2)*3"
 ```bash
 exit                    # コンテナから出る
 docker compose down      # コンテナを停止・削除
+```
+
+### run.sh スクリプトについて
+
+`run.sh` は、Mavenコマンドをまとめて実行するためのシェルスクリプトです。
+
+**なぜ便利か？**
+- 毎回 `mvn package` と `mvn exec:java` を手動で実行する必要がない
+- 1つのコマンドでビルドから実行まで自動化
+- 引数として式文字列を渡すだけで実行できる
+
+**仕組み：**
+1. 引数として式文字列（例：`"1+2*3"`）を受け取る
+2. `mvn -q -DskipTests package` でプロジェクトをビルド
+3. `mvn exec:java` で `DemoParseEval` を実行し、引数の式を評価
+
+**使い方：**
+```bash
+./run.sh "1+2*3"           # 式を評価
+./run.sh "sin(x)"           # 関数を含む式もOK
+./run.sh "-(1+2)*3"         # 単項マイナスもOK
 ```
 
 ## 12. Maven（mvn）の使い方

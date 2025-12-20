@@ -8,6 +8,9 @@ RUN mvn -q dependency:resolve
 COPY src ./src
 COPY samples ./samples
 COPY tests ./tests
+COPY run.sh ./run.sh
+
+RUN chmod +x ./run.sh
 
 RUN mvn -q package -DskipTests
 
