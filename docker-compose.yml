@@ -2,7 +2,12 @@ services:
   math:
     build: .
     container_name: handwritten-math
-    command: >
-      mvn -q exec:java
-      -Dexec.mainClass=io.DemoBatchEval
-      -Dexec.args="tests/phase1_tests.csv"
+    tty: true
+    stdin_open: true
+    volumes:
+      - .:/app
+      - m2:/root/.m2
+    command: ["bash", "-lc", "sleep infinity"]
+
+volumes:
+  m2:

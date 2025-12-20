@@ -252,13 +252,82 @@ python/ # PyTorch 学習コード（提出物外）
 
 ---
 
-## 11. 実行方法（Phase 0）
+## 11. 実行方法
 
-Docker を使用する。
+### Dockerコンテナの起動
 
 ```bash
-docker compose build
-docker compose up
+docker compose up --build -d
+```
+
+### コンテナに入る
+
+```bash
+docker compose exec math bash
+```
+
+### コンテナ内での実行
+
+コンテナ内で以下のコマンドを実行できます：
+
+#### ビルド(コード書き直したらbashないでこのコマンドを打つと反映される)
+
+```bash
+mvn -q -DskipTests package
+```
+
+#### Phase1: JSONファイルからASTを読み込んで評価
+
+```bash
+mvn -q exec:java -Dexec.mainClass=io.DemoLoadEval -Dexec.args="samples/expr/add_mul.json"
+```
+
+#### Phase1.5: 式文字列をパースして評価
+
+**推奨：`run.sh` スクリプトを使用（簡単）**
+
+```bash
+./run.sh "1+2*3"
+./run.sh "sin(exp(x))"
+./run.sh "-(1+2)*3"
+```
+
+`run.sh` は自動でビルドと実行を行います。毎回 `mvn package` と `mvn exec:java` を手動で実行する必要がありません。
+
+**従来の方法（直接Mavenコマンドを実行）**
+
+```bash
+mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="1+2*3"
+mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="sin(exp(x))"
+mvn -q exec:java -Dexec.mainClass=io.DemoParseEval -Dexec.args="-(1+2)*3"
+```
+
+### コンテナから出る・終了
+
+```bash
+exit                    # コンテナから出る
+docker compose down      # コンテナを停止・削除
+```
+
+### run.sh スクリプトについて
+
+`run.sh` は、Mavenコマンドをまとめて実行するためのシェルスクリプトです。
+
+**なぜ便利か？**
+- 毎回 `mvn package` と `mvn exec:java` を手動で実行する必要がない
+- 1つのコマンドでビルドから実行まで自動化
+- 引数として式文字列を渡すだけで実行できる
+
+**仕組み：**
+1. 引数として式文字列（例：`"1+2*3"`）を受け取る
+2. `mvn -q -DskipTests package` でプロジェクトをビルド
+3. `mvn exec:java` で `DemoParseEval` を実行し、引数の式を評価
+
+**使い方：**
+```bash
+./run.sh "1+2*3"           # 式を評価
+./run.sh "sin(x)"           # 関数を含む式もOK
+./run.sh "-(1+2)*3"         # 単項マイナスもOK
 ```
 
 ## 12. Maven（mvn）の使い方
@@ -268,7 +337,7 @@ Pythonにおける `pip + requirements.txt` に相当する役割を、`pom.xml`
 
 ---
 
-### 1. Mavenの役割
+### Mavenの役割
 
 Mavenは以下を自動で行う：
 
@@ -284,17 +353,10 @@ Mavenは以下を自動で行う：
 
 ---
 
-### 3. 依存関係の取得
+### 依存関係の取得
 
 ```bash
 mvn dependency:resolve
-```
-
-####実行方法
-```bash
-mvn exec:java \
-  -Dexec.mainClass=io.DemoLoadEval \
-  -Dexec.args="samples/expr/add_mul.json"
 ```
 
 
