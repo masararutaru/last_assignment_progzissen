@@ -1,0 +1,22 @@
+# Python環境用のDockerfile
+# PyTorch + ONNX の学習・変換環境
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# システム依存関係のインストール
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python依存関係のインストール
+COPY python/requirements.txt ./python/requirements.txt
+RUN pip install --no-cache-dir -r python/requirements.txt
+
+# プロジェクトファイルをコピー
+COPY python ./python
+
+# デフォルトでbashを起動（compose側で常駐させる）
+CMD ["bash"]

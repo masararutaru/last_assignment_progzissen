@@ -1,4 +1,5 @@
 services:
+  # Java/Maven環境（既存）
   math:
     build: .
     container_name: handwritten-math
@@ -9,5 +10,27 @@ services:
       - m2:/root/.m2
     command: ["bash", "-lc", "sleep infinity"]
 
+  # Python/PyTorch環境（学習・ONNX変換用）
+  python:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: handwritten-math-python
+    tty: true
+    stdin_open: true
+    volumes:
+      - .:/app
+      - pip_cache:/root/.cache/pip
+    command: ["bash", "-lc", "sleep infinity"]
+    # GPUが必要な場合は以下をコメントアウト
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
 volumes:
   m2:
+  pip_cache:

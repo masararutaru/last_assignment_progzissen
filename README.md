@@ -272,10 +272,20 @@ python/ # PyTorch 学習コード（提出物外）
 docker compose up --build -d
 ```
 
+これで以下の2つのコンテナが起動します：
+- `handwritten-math` (Java/Maven環境)
+- `handwritten-math-python` (Python/PyTorch環境)
+
 ### コンテナに入る
 
+**Java環境に入る:**
 ```bash
 docker compose exec math bash
+```
+
+**Python環境に入る:**
+```bash
+docker compose exec python bash
 ```
 
 ### コンテナ内での実行
@@ -321,6 +331,22 @@ mvn -q exec:java -Dexec.mainClass=io.DemoJsonRoundTrip -Dexec.args="samples/expr
 ```
 
 このデモは、JSON → AST → JSON の往復変換が正しく動作することを確認します。GUIで計算過程を表示する際に使用します。
+
+### Python環境での作業
+
+Pythonコンテナ内で以下を実行できます：
+
+```bash
+# Pythonコンテナに入る
+docker compose exec python bash
+
+# 仮想環境は不要（コンテナ内に直接インストール済み）
+# 学習コードの実行（今後追加予定）
+# python train/train.py
+
+# ONNX書き出し
+python python/export_onnx.py --checkpoint python/weights/model.pth --output assets/model.onnx --verify
+```
 
 ### コンテナから出る・終了
 

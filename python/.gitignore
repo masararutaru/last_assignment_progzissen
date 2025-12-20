@@ -1,0 +1,45 @@
+# PyTorch学習済み重みファイル（Git管理しない）
+weights/
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.h5
+
+# ONNXファイル（大きい場合はGit管理しない）
+# 小さい場合は assets/model.onnx に配置してGit管理する
+*.onnx
+
+# Pythonキャッシュ
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 仮想環境
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# データセット（大きい場合は除外）
+data/
+datasets/
+*.zip
+*.tar.gz
+
+# ログ・一時ファイル
+*.log
+*.tmp
+.DS_Store

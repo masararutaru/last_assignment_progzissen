@@ -48,3 +48,14 @@ test-results/
 # その他
 *.orig
 
+# Python（重みファイルなどは python/.gitignore で管理）
+python/weights/*.pt
+python/weights/*.pth
+python/weights/*.ckpt
+python/weights/*.pkl
+python/weights/*.h5
+python/__pycache__/
+python/*.pyc
+python/venv/
+python/env/
+python/.venv

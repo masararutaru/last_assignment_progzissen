@@ -1,0 +1,21 @@
+# PyTorch（CPU版。GPUが必要な場合は torch を torch==2.x.x+cu118 などに変更）
+torch>=2.0.0
+torchvision>=0.15.0
+
+# ONNX関連
+onnx>=1.14.0
+onnxruntime>=1.15.0
+
+# 画像処理・データローダー
+Pillow>=9.0.0
+numpy>=1.24.0
+
+# 学習用ユーティリティ
+tqdm>=4.65.0
+
+# 設定ファイル読み込み（オプション）
+pyyaml>=6.0
+
+# 開発用（オプション）
+# jupyter>=1.0.0
+# matplotlib>=3.7.0
