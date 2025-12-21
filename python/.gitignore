@@ -34,13 +34,17 @@ ENV/
 *.swo
 
 # データセット（大きい場合は除外）
-# ただし、data/ 内のスクリプト（*.py）とREADME.mdは含める
+# ただし、data/ 内のスクリプト（*.py）、config/、preprocess/、README.mdは含める
 data/raw/
 data/processed/
 data/custom/
 datasets/
 *.zip
 *.tar.gz
+
+# Pythonキャッシュ（data/配下も含む）
+**/__pycache__/
+**/*.py[cod]
 
 # ログ・一時ファイル
 *.log
