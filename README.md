@@ -268,13 +268,23 @@ python/ # PyTorch 学習コード（提出物外）
 
 ### Dockerコンテナの起動
 
+**重要**: Pythonコンテナは**提出物外**（学習・ONNX変換用）です。Javaの開発・テストだけなら不要です。
+
+**Java環境だけ起動する場合（推奨）:**
+```bash
+docker compose up --build -d math
+```
+
+**両方起動する場合:**
 ```bash
 docker compose up --build -d
 ```
 
-これで以下の2つのコンテナが起動します：
-- `handwritten-math` (Java/Maven環境)
-- `handwritten-math-python` (Python/PyTorch環境)
+**注意**: Pythonコンテナ（`python`）はPyTorchを含むため、**数GBのサイズ**になり、ビルドに**10-30分程度**かかります。また、**ディスク容量が十分にあることを確認**してください（最低5GB以上の空き容量推奨）。
+
+これで以下のコンテナが起動します：
+- `handwritten-math` (Java/Maven環境) - **必須**
+- `handwritten-math-python` (Python/PyTorch環境) - **オプション**（学習・ONNX変換時のみ必要）
 
 ### コンテナに入る
 
@@ -353,6 +363,47 @@ python python/export_onnx.py --checkpoint python/weights/model.pth --output asse
 ```bash
 exit                    # コンテナから出る
 docker compose down      # コンテナを停止・削除
+```
+
+### Dockerのトラブルシューティング
+
+#### Pythonコンテナのビルドが遅い・容量不足エラーが出る
+
+**問題**: PyTorchは非常に大きなパッケージ（数GB）のため、ビルドに時間がかかり、ディスク容量を消費します。
+
+**解決策**:
+1. **Javaだけ使う場合**: Pythonコンテナは起動しない
+   ```bash
+   docker compose up --build -d math  # Javaだけ起動
+   ```
+
+2. **ディスク容量を確保**: 最低5GB以上の空き容量を確保してください
+   ```bash
+   # Dockerの使用容量を確認
+   docker system df
+   
+   # 不要なイメージ・コンテナを削除
+   docker system prune -a
+   ```
+
+3. **ビルドキャッシュを活用**: 一度ビルドしたら、次回はキャッシュが使われます
+
+4. **Python環境はローカルで**: Dockerを使わず、ローカルにPython環境を構築する方法もあります
+   ```bash
+   cd python
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+#### Javaコンテナだけ起動したい
+
+```bash
+# Javaコンテナだけ起動
+docker compose up --build -d math
+
+# Javaコンテナに入る
+docker compose exec math bash
 ```
 
 ### run.sh スクリプトについて

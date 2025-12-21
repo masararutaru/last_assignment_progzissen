@@ -1,19 +1,36 @@
 # Python環境用のDockerfile
 # PyTorch + ONNX の学習・変換環境
+# 注意: PyTorchは非常に大きい（数GB）ため、ビルドに時間がかかります
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# システム依存関係のインストール
+# システム依存関係のインストール（最小限に）
 RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
     build-essential \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Python依存関係のインストール
+# PyTorchはCPU版を明示的に指定してサイズを削減
 COPY python/requirements.txt ./python/requirements.txt
-RUN pip install --no-cache-dir -r python/requirements.txt
+
+# PyTorchをCPU版に固定（GPU版より軽量）
+# バージョンを固定することで、ビルドキャッシュが効きやすくなる
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.1.0+cpu \
+    torchvision==0.16.0+cpu \
+    && pip install --no-cache-dir \
+    onnx>=1.14.0 \
+    onnxruntime>=1.15.0 \
+    Pillow>=9.0.0 \
+    numpy>=1.24.0 \
+    tqdm>=4.65.0 \
+    pyyaml>=6.0
 
 # プロジェクトファイルをコピー
 COPY python ./python
