@@ -592,3 +592,270 @@ handwritten-math exited with code 0
 3. ✅ `DemoDetectionsToAst` で動作確認済み（全サンプルで期待通りの結果を出力）
 4. ONNX推論実装との統合
 5. GUIとの統合
+
+---
+
+## 14. Object Detection方針（確定版）
+
+### 0. 全体ゴール
+
+Java製お絵描きアプリで描かれた数式画像から、
+
+1. **Object Detection（記号単位）**
+2. **Spatial parsing（位置関係）**
+3. **AST生成 → 評価（計算）**
+
+までを行う。
+
+### 1. 検出対象クラス（確定）
+
+最小構成として以下 **19クラス**：
+
+- **数字**: `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`
+- **演算子**: `+`, `-`, `*`, `/`, `=`
+- **変数**: `x`
+- **括弧**: `(`, `)`
+
+まずはこの集合に固定。
+
+> **注意**: `x` と `*` は混同しやすいが、現段階では別クラスで扱う。必要なら将来 AST 側で統合可能。
+
+### 2. 検出モデルの基本方針
+
+#### 採用モデル
+
+**YOLOv5n（Ultralytics）**
+
+#### 採用理由（根拠）
+
+- **ONNX export が長年安定運用されている**
+- **出力構造が単純**で Java側後処理（NMS実装）と相性が良い
+- **nanoモデルは CPU推論でも現実的**
+- **学習済み重み（COCO事前学習）が利用可能**
+
+👉 **「詰まずに Java + ONNX + CPU で動かす」ことを最優先**
+
+### 3. CPUで使えるか問題について（結論）
+
+**問題なし**
+
+- 事前学習済みかどうか ≠ CPUで動くか
+- ONNXに変換 → **ONNX Runtime (CPU) で推論**
+- 学習はGPU推奨だが、**推論はCPU前提**
+
+### 4. データセット戦略（重要）
+
+#### 基本思想
+
+**拾えるデータでインスタンス数を稼ぐ** → **最後に自前データでドメイン適応**
+
+#### 4.1 大量データ（主力）
+
+以下のいずれか（または併用）：
+
+**A. Aida Calculus Math Handwriting Dataset**
+- 手書き数式画像
+- 文字・記号単位のBBoxあり
+- LaTeXラベル付き
+- → 今回の object detection に最適
+
+**B. MathWriting（Google Research, 合成側）**
+- LaTeX → レンダリング → BBox生成
+- 合成だが **大量に確保可能**
+- 記号検出の事前学習に向く
+
+👉 **19クラス分だけ抽出して使用**（全部使わない）
+
+#### 4.2 自前データ（仕上げ）
+
+**60〜200枚**
+
+- Javaアプリで実際に描いた画像
+- 記号単位でBBox付与
+
+**目的**：
+- 線の太さ
+- アンチエイリアス
+- 背景色
+- 解像度
+
+など **アプリ固有の見た目差を吸収**
+
+### 5. 学習フロー（確定）
+
+**段階的 fine-tuning（混ぜない）**
+
+> **重要**: 混合学習はしない（自前データが埋もれるため）
+
+```
+[COCO事前学習済み YOLOv5n]
+        ↓
+[Aida / MathWriting 合成データ]
+        ↓
+[自前アプリ画像 60〜200枚]
+```
+
+各段階で fine-tune。最終段は数epochのみ（ドメイン合わせ）。
+
+### 6. 推論パイプライン（Java側）
+
+#### 全体流れ
+
+```
+Canvas画像
+  ↓
+前処理（Resize / Normalize）
+  ↓
+ONNX Runtime (CPU)
+  ↓
+Raw Detection Outputs
+  ↓
+NMS（← ここを SpatialToExpr.java に追加）
+  ↓
+Score Filtering
+  ↓
+Spatial Parsing → AST
+```
+
+### 7. NMSの扱い（重要・確定）
+
+#### 方針
+
+**Java側で NMS を実装する**
+
+#### 理由
+
+- YOLOv5 / v8 系 ONNX は **NMSなし生出力**
+- Javaで制御したほうが：
+  - IoU閾値調整しやすい
+  - AST前処理と統合しやすい
+  - デバッグが楽
+
+#### 実装順（推奨）
+
+1. **NMS**
+2. **Score（confidence）フィルタリング**
+
+👉 **`SpatialToExpr.java` のスコアフィルタリング前に NMS を入れる** は正しい設計判断
+
+### 8. 推奨初期パラメータ
+
+```java
+confidence_threshold = 0.15   // Recall寄り
+nms_iou_threshold     = 0.45
+```
+
+まずは**取りこぼしを減らす**。誤検出は AST 側・後段で吸収可能。
+
+### 9. 評価指標（開発用）
+
+- **mAP@0.5**（まずはこれ）
+- Precision / Recall のバランス確認
+- 最終的には **式全体の正解率**が主評価
+
+### 10. 今後の拡張余地（今はやらない）
+
+- クラス追加（√, 分数線, Σ, ∫ など）
+- 構造検出（fraction line, superscript）
+- 検出＋構造統合モデル
+
+### 一文まとめ
+
+**YOLOv5n（COCO事前学習）をベースに、Aida/MathWriting合成データで記号検出をfine-tuneし、最後に自前アプリ画像60〜200枚でドメイン適応。ONNXに変換し、Java（ONNX Runtime CPU）で推論。`SpatialToExpr.java`では NMS → スコアフィルタリング の順で後処理を行い、AST生成へ接続する。**
+
+---
+
+## 15. Python学習パイプライン（提出物外）
+
+> **注意**: このセクションは **提出物外** の補助工程です。Java側の実装が優先されます。
+
+### 学習環境のセットアップ
+
+Pythonコンテナを使用する場合：
+
+```bash
+docker compose up --build -d python
+docker compose exec python bash
+```
+
+### データセットの準備
+
+#### ステップ1: 公開データセットの取得
+
+**Aida Calculus Math Handwriting Dataset** または **MathWriting** から19クラス分のデータを抽出。
+
+#### ステップ2: 自前データの作成
+
+Javaアプリで実際に描いた画像60〜200枚を用意し、記号単位でBBoxを付与。
+
+### 学習フロー
+
+#### 段階1: COCO事前学習済みモデルの取得
+
+```bash
+# YOLOv5nの事前学習済み重みをダウンロード
+# （Ultralytics公式から自動取得）
+```
+
+#### 段階2: 公開データセットでのFine-tuning
+
+```bash
+# Aida / MathWriting データで学習
+python python/train/train.py --data aida_or_mathwriting --epochs 100
+```
+
+#### 段階3: 自前データでのドメイン適応
+
+```bash
+# 自前アプリ画像で最終調整
+python python/train/train.py --data custom --epochs 10 --weights weights/aida_model.pth
+```
+
+### ONNXへの変換
+
+学習完了後、ONNX形式に変換：
+
+```bash
+python python/export_onnx.py \
+  --checkpoint python/weights/model.pth \
+  --output assets/model.onnx \
+  --verify
+```
+
+### モデルの配置
+
+変換したONNXモデルを `assets/model.onnx` に配置すると、Java側から使用可能になります。
+
+---
+
+## 16. 実装タスク（今後の作業）
+
+### 優先度: 高
+
+1. **データセットの取得・準備**
+   - Aida / MathWriting データセットのダウンロード
+   - 19クラス分のデータ抽出スクリプト作成
+
+2. **NMS実装（Java側）**
+   - `SpatialToExpr.java` にNMS機能を追加
+   - IoU閾値の調整機能
+
+3. **ONNX推論実装（Java側）**
+   - ONNX Runtime Java の統合
+   - 前処理（Resize / Normalize）の実装
+
+### 優先度: 中
+
+4. **学習スクリプトの実装（Python側）**
+   - YOLOv5nの学習パイプライン
+   - データローダーの実装
+
+5. **評価スクリプトの実装**
+   - mAP@0.5の計算
+   - Precision / Recall の可視化
+
+### 優先度: 低
+
+6. **GUIとの統合**
+   - お絵描きUIからの画像入力
+   - 推論結果のリアルタイム表示

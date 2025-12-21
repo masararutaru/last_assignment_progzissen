@@ -34,7 +34,10 @@ ENV/
 *.swo
 
 # データセット（大きい場合は除外）
-data/
+# ただし、data/ 内のスクリプト（*.py）とREADME.mdは含める
+data/raw/
+data/processed/
+data/custom/
 datasets/
 *.zip
 *.tar.gz
