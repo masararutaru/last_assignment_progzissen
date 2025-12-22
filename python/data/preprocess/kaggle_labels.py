@@ -117,17 +117,43 @@ def process_kaggle_json(
     """
     Kaggle JSONファイルを処理してラベルファイルを生成
     
+    Args:
+        json_path: 処理するJSONファイルのパス
+        output_labels_dir: ラベルファイルの出力先ディレクトリ
+        stats: 統計情報を格納する辞書
+    
     Returns:
         (処理済み数, スキップ数)
+    
+    Raises:
+        FileNotFoundError: JSONファイルが見つからない場合
+        json.JSONDecodeError: JSONファイルの解析に失敗した場合
+        IOError: ファイルの読み書きに失敗した場合
     """
-    # JSONファイルを読み込む
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    try:
+        # JSONファイルを読み込む
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"⚠️  警告: JSONファイルが見つかりません: {json_path}")
+        return 0, 0
+    except json.JSONDecodeError as e:
+        print(f"⚠️  警告: JSONファイルの解析に失敗しました: {json_path}")
+        print(f"   エラー: {e}")
+        return 0, 0
+    
+    if not isinstance(data, list):
+        print(f"⚠️  警告: JSONファイルの形式が不正です（リスト形式を期待）: {json_path}")
+        return 0, 0
     
     processed_count = 0
     skipped_count = 0
     
     for sample in data:
+        if not isinstance(sample, dict):
+            skipped_count += 1
+            continue
+            
         uuid = sample.get('uuid', '')
         if not uuid:
             skipped_count += 1
@@ -143,18 +169,23 @@ def process_kaggle_json(
         
         # ラベルファイルを生成
         label_path = output_labels_dir / f"{uuid}.txt"
-        with open(label_path, 'w', encoding='utf-8') as f:
-            for label in labels:
-                class_id = label['class_id']
-                center_x, center_y, width, height = label['bbox_yolo']
-                
-                # YOLO形式で書き込み
-                f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
-                
-                # 統計情報を更新
-                stats[label['class']] += 1
-        
-        processed_count += 1
+        try:
+            with open(label_path, 'w', encoding='utf-8') as f:
+                for label in labels:
+                    class_id = label['class_id']
+                    center_x, center_y, width, height = label['bbox_yolo']
+                    
+                    # YOLO形式で書き込み
+                    f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}\n")
+                    
+                    # 統計情報を更新
+                    stats[label['class']] += 1
+            
+            processed_count += 1
+        except IOError as e:
+            print(f"⚠️  警告: ラベルファイルの書き込みに失敗しました: {label_path}")
+            print(f"   エラー: {e}")
+            skipped_count += 1
     
     return processed_count, skipped_count
 
@@ -190,15 +221,31 @@ def main():
     source_dir = script_dir / args.source if not args.source.is_absolute() else args.source
     target_dir = script_dir / args.target if not args.target.is_absolute() else args.target
     
+    # ソースディレクトリの存在確認
+    if not source_dir.exists():
+        print(f"❌ エラー: ソースディレクトリが存在しません: {source_dir}")
+        return
+    
+    if not source_dir.is_dir():
+        print(f"❌ エラー: ソースパスはディレクトリではありません: {source_dir}")
+        return
+    
     # 出力ディレクトリを作成
     labels_dir = target_dir / args.split / 'labels'
-    labels_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        labels_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"❌ エラー: 出力ディレクトリの作成に失敗しました: {labels_dir}")
+        print(f"   エラー: {e}")
+        return
     
     print("=" * 80)
     print("Kaggle OCRデータセットのラベルファイル生成")
     print("=" * 80)
     print(f"ソース: {source_dir}")
+    print(f"  存在確認: ✓")
     print(f"出力先: {labels_dir}")
+    print(f"  存在確認: ✓")
     print(f"分割: {args.split}")
     print(f"対象クラス: {len(CLASSES)}クラス ({', '.join(CLASSES)})")
     print()
@@ -208,9 +255,20 @@ def main():
     
     if len(json_files) == 0:
         print(f"❌ エラー: JSONファイルが見つかりません: {source_dir}")
+        print(f"   検索パターン: kaggle_data_*.json")
+        print(f"   確認: ソースディレクトリ配下にJSONファイルが存在するか確認してください")
         return
     
     print(f"見つかったJSONファイル: {len(json_files)} 件")
+    if len(json_files) <= 10:
+        print("  ファイル一覧:")
+        for json_file in json_files:
+            print(f"    - {json_file}")
+    else:
+        print("  ファイル一覧（最初の10件）:")
+        for json_file in json_files[:10]:
+            print(f"    - {json_file}")
+        print(f"    ... 他 {len(json_files) - 10} 件")
     print()
     
     # 統計情報
@@ -241,6 +299,17 @@ def main():
     total_instances = sum(stats.values())
     print(f"\n総インスタンス数: {total_instances}")
     print(f"出力先: {labels_dir}")
+    
+    # 生成されたラベルファイル数の確認
+    generated_files = list(labels_dir.glob('*.txt'))
+    print(f"生成されたラベルファイル数: {len(generated_files)} 件")
+    
+    if len(generated_files) == 0:
+        print("⚠️  警告: ラベルファイルが1つも生成されませんでした")
+        print("   確認事項:")
+        print("   1. JSONファイルに有効なサンプルが含まれているか")
+        print("   2. サンプルに19クラスに該当する文字が含まれているか")
+        print("   3. サンプルに'uuid'フィールドが存在するか")
 
 
 if __name__ == '__main__':
