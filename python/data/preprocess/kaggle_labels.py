@@ -293,10 +293,22 @@ def main():
         print(f"❌ エラー: ソースパスはディレクトリではありません: {source_dir}")
         return
     
+    # 出力先パスの検証（MyDrive直下に保存されないようにする）
+    target_path_str = str(target_dir)
+    if target_path_str == "/content/drive/MyDrive" or str(target_dir.parent) == "/content/drive/MyDrive":
+        print(f"❌ エラー: 出力先がMyDrive直下を指しています: {target_dir}")
+        print("   これは許可されていません。必ずサブディレクトリを指定してください。")
+        return
+    
     # 出力ディレクトリを作成
     labels_dir = target_dir / args.split / 'labels'
     try:
         labels_dir.mkdir(parents=True, exist_ok=True)
+        # 作成されたパスを確認（MyDrive直下でないことを再確認）
+        if str(labels_dir.parent.parent.parent) == "/content/drive/MyDrive":
+            print(f"❌ エラー: 出力先がMyDrive直下になってしまいます: {labels_dir}")
+            print(f"   出力先パスを確認してください: {target_dir}")
+            return
     except OSError as e:
         print(f"❌ エラー: 出力ディレクトリの作成に失敗しました: {labels_dir}")
         print(f"   エラー: {e}")
