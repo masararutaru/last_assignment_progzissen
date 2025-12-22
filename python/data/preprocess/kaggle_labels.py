@@ -10,6 +10,7 @@ import argparse
 import json
 import sys
 import io
+import time
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List
@@ -357,8 +358,29 @@ def main():
     # 画像ファイルのマッピング（uuid -> 画像パス）
     image_mapping: Dict[str, str] = {}
     
-    # 各JSONファイルを処理
-    for json_path in tqdm(json_files, desc="処理中"):
+    # 処理開始時刻
+    start_time = time.time()
+    last_log_time = start_time
+    
+    # 各JSONファイルを処理（詳細な進捗表示付き）
+    print("\n処理を開始します...")
+    print(f"総ファイル数: {len(json_files)} 件\n")
+    
+    for idx, json_path in enumerate(tqdm(json_files, desc="処理中", ncols=100, mininterval=1.0), 1):
+        # 定期的に詳細ログを出力（10ファイルごと、または5秒ごと）
+        current_time = time.time()
+        if idx % 10 == 0 or (current_time - last_log_time) >= 5.0:
+            elapsed = current_time - start_time
+            rate = idx / elapsed if elapsed > 0 else 0
+            remaining = (len(json_files) - idx) / rate if rate > 0 else 0
+            print(f"\n[進捗] {idx}/{len(json_files)} ファイル処理済み "
+                  f"(経過時間: {elapsed:.1f}秒, "
+                  f"処理速度: {rate:.2f}ファイル/秒, "
+                  f"残り時間目安: {remaining:.1f}秒)")
+            print(f"  現在処理中: {json_path.name}")
+            print(f"  処理済みサンプル: {total_processed}, スキップ: {total_skipped}")
+            last_log_time = current_time
+        
         processed, skipped = process_kaggle_json(json_path, labels_dir, stats, image_mapping)
         total_processed += processed
         total_skipped += skipped
