@@ -261,6 +261,49 @@ python preprocess/inspect_data.py --json raw/aidapearson_ocr/batch_1/JSON/kaggle
 python preprocess/view_labels.py --json raw/aidapearson_ocr/batch_1/JSON/kaggle_data_1.json --sample 0 --count 3
 ```
 
+## preprocess_kaggle_data.ipynb実行結果
+
+
+画像マッピングファイルを保存しました: /content/drive/MyDrive/大学　講義/2年/後期/java_zissen/datasets/last_assignment/processed/train/image_mapping.json
+  マッピング数: 99941 件
+
+================================================================================
+処理完了
+================================================================================
+処理済み: 99941 サンプル
+スキップ: 59 サンプル（18クラスに該当する文字がない）
+生成されたラベルファイル: 99941 件
+
+クラス別統計:
+    0:    19159 インスタンス
+    1:    35085 インスタンス
+    2:    91587 インスタンス
+    3:    62734 インスタンス
+    4:    42610 インスタンス
+    5:    41726 インスタンス
+    6:    41671 インスタンス
+    7:    41773 インスタンス
+    8:    41951 インスタンス
+    9:    42619 インスタンス
+    +:   113617 インスタンス
+    -:    95911 インスタンス
+    *:     1264 インスタンス
+    /:   166594 インスタンス
+    =:     9801 インスタンス
+    x:    63050 インスタンス
+    (:    54150 インスタンス
+    ):    54150 インスタンス
+
+総インスタンス数: 1019452
+出力先: /content/drive/MyDrive/大学　講義/2年/後期/java_zissen/datasets/last_assignment/processed/train/labels
+生成されたラベルファイル数: 99941 件
+
+画像マッピング:
+  マッピング数: 99941 件
+  マッピングファイル: /content/drive/MyDrive/大学　講義/2年/後期/java_zissen/datasets/last_assignment/processed/train/image_mapping.json
+  説明: 各ラベルファイル（<uuid>.txt）に対応する画像ファイルのパスが記録されています
+
+
 ## 参考リンク
 
 - [YOLOv5 Dataset Format](https://docs.ultralytics.com/datasets/)
