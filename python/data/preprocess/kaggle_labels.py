@@ -255,10 +255,34 @@ def main():
     
     args = parser.parse_args()
     
-    # パスを解決（相対パスの場合はスクリプトの親ディレクトリ基準）
+    # パスを解決（絶対パスの場合はそのまま使用、相対パスの場合はスクリプトの親ディレクトリ基準）
     script_dir = Path(__file__).parent.parent
-    source_dir = script_dir / args.source if not args.source.is_absolute() else args.source
-    target_dir = script_dir / args.target if not args.target.is_absolute() else args.target
+    
+    # 絶対パスかどうかを判定
+    source_path_obj = Path(args.source)
+    target_path_obj = Path(args.target)
+    
+    if source_path_obj.is_absolute():
+        # 絶対パスの場合
+        source_dir = source_path_obj
+    else:
+        # 相対パスの場合
+        source_dir = (script_dir / args.source).resolve()
+    
+    if target_path_obj.is_absolute():
+        # 絶対パスの場合
+        target_dir = target_path_obj
+    else:
+        # 相対パスの場合
+        target_dir = (script_dir / args.target).resolve()
+    
+    # デバッグ情報（パス解決の確認）
+    print(f"[DEBUG] script_dir: {script_dir}")
+    print(f"[DEBUG] args.source (元): {args.source} (絶対パス: {source_path_obj.is_absolute()})")
+    print(f"[DEBUG] args.target (元): {args.target} (絶対パス: {target_path_obj.is_absolute()})")
+    print(f"[DEBUG] source_dir (解決後): {source_dir}")
+    print(f"[DEBUG] target_dir (解決後): {target_dir}")
+    print()
     
     # ソースディレクトリの存在確認
     if not source_dir.exists():
