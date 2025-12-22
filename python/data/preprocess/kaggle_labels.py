@@ -163,10 +163,16 @@ def process_kaggle_json(
         json.JSONDecodeError: JSONファイルの解析に失敗した場合
         IOError: ファイルの読み書きに失敗した場合
     """
+    file_start_time = time.time()
+    print(f"[DEBUG] JSONファイル読み込み開始: {json_path.name}")
+    
     try:
         # JSONファイルを読み込む
+        json_load_start = time.time()
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        json_load_time = time.time() - json_load_start
+        print(f"[DEBUG] JSONファイル読み込み完了: {json_load_time:.2f}秒, サンプル数: {len(data) if isinstance(data, list) else 'N/A'}")
     except FileNotFoundError:
         print(f"⚠️  警告: JSONファイルが見つかりません: {json_path}")
         return 0, 0
@@ -179,10 +185,33 @@ def process_kaggle_json(
         print(f"⚠️  警告: JSONファイルの形式が不正です（リスト形式を期待）: {json_path}")
         return 0, 0
     
+    # 画像ファイルをキャッシュ（Google DriveのI/Oを削減）
+    image_cache: Dict[str, Path] = {}
+    background_images_dir: Path | None = None
+    if image_mapping is not None:
+        cache_start = time.time()
+        json_dir = json_path.parent
+        parent_dir = json_dir.parent
+        background_images_dir = parent_dir / 'background_images'
+        
+        if background_images_dir.exists():
+            # 画像ファイルを一度にリストアップ
+            image_files = list(background_images_dir.glob('*'))
+            for img_file in image_files:
+                if img_file.is_file():
+                    # 拡張子を除いたファイル名（UUID）をキーとして保存
+                    uuid_key = img_file.stem
+                    image_cache[uuid_key] = img_file
+            cache_time = time.time() - cache_start
+            print(f"[DEBUG] 画像ファイルキャッシュ完了: {len(image_cache)}件, {cache_time:.2f}秒")
+        else:
+            print(f"[DEBUG] background_imagesディレクトリが見つかりません: {background_images_dir}")
+    
     processed_count = 0
     skipped_count = 0
+    sample_start_time = time.time()
     
-    for sample in data:
+    for idx, sample in enumerate(data):
         if not isinstance(sample, dict):
             skipped_count += 1
             continue
@@ -192,6 +221,15 @@ def process_kaggle_json(
             skipped_count += 1
             continue
         
+        # 定期的に進捗を出力（100サンプルごと、または5秒ごと）
+        if idx > 0 and (idx % 100 == 0 or (time.time() - sample_start_time) >= 5.0):
+            elapsed = time.time() - sample_start_time
+            rate = idx / elapsed if elapsed > 0 else 0
+            print(f"[DEBUG] サンプル処理中: {idx}/{len(data)} ({idx/len(data)*100:.1f}%), "
+                  f"処理速度: {rate:.1f}サンプル/秒, "
+                  f"処理済み: {processed_count}, スキップ: {skipped_count}")
+            sample_start_time = time.time()
+        
         # ラベルを抽出
         labels = extract_labels_from_sample(sample)
         
@@ -200,9 +238,16 @@ def process_kaggle_json(
             skipped_count += 1
             continue
         
-        # 画像ファイルのパスを検索してマッピングに追加
+        # 画像ファイルのパスを検索してマッピングに追加（キャッシュから検索）
         if image_mapping is not None:
-            image_path = find_image_path(uuid, json_path)
+            image_path = image_cache.get(uuid)
+            if image_path is None and background_images_dir is not None and background_images_dir.exists():
+                # キャッシュにない場合は拡張子を試す（ファイルシステムに直接アクセス）
+                for ext in ['.png', '.jpg', '.jpeg']:
+                    test_path = background_images_dir / f"{uuid}{ext}"
+                    if test_path.exists():
+                        image_path = test_path
+                        break
             if image_path is not None:
                 # 相対パスまたは絶対パスを保存（文字列として）
                 image_mapping[uuid] = str(image_path)
@@ -226,6 +271,11 @@ def process_kaggle_json(
             print(f"⚠️  警告: ラベルファイルの書き込みに失敗しました: {label_path}")
             print(f"   エラー: {e}")
             skipped_count += 1
+    
+    file_total_time = time.time() - file_start_time
+    print(f"[DEBUG] ファイル処理完了: {json_path.name}, "
+          f"総時間: {file_total_time:.2f}秒, "
+          f"処理済み: {processed_count}, スキップ: {skipped_count}")
     
     return processed_count, skipped_count
 
@@ -252,6 +302,11 @@ def main():
         default='train',
         choices=['train', 'val', 'test'],
         help='データセットの分割（デフォルト: train）'
+    )
+    parser.add_argument(
+        '--image-mapping',
+        action='store_true',
+        help='画像ファイルのマッピングを生成する（デフォルト: 無効）。ラベルファイル生成のみの場合は不要'
     )
     
     args = parser.parse_args()
@@ -315,8 +370,8 @@ def main():
         print(f"   エラー: {e}")
         return
     
-    # 画像マッピングファイルのパス
-    mapping_file = target_dir / args.split / 'image_mapping.json'
+    # 画像マッピングファイルのパス（オプション）
+    mapping_file = target_dir / args.split / 'image_mapping.json' if args.image_mapping else None
     
     print("=" * 80)
     print("Kaggle OCRデータセットのラベルファイル生成")
@@ -326,6 +381,7 @@ def main():
     print(f"出力先: {labels_dir}")
     print(f"  存在確認: ✓")
     print(f"分割: {args.split}")
+    print(f"画像マッピング: {'有効' if args.image_mapping else '無効（ラベルファイルのみ生成）'}")
     print(f"対象クラス: {len(CLASSES)}クラス ({', '.join(CLASSES)})")
     print()
     
@@ -355,8 +411,8 @@ def main():
     total_processed = 0
     total_skipped = 0
     
-    # 画像ファイルのマッピング（uuid -> 画像パス）
-    image_mapping: Dict[str, str] = {}
+    # 画像ファイルのマッピング（uuid -> 画像パス）（オプション）
+    image_mapping: Dict[str, str] | None = {} if args.image_mapping else None
     
     # 処理開始時刻
     start_time = time.time()
@@ -385,15 +441,16 @@ def main():
         total_processed += processed
         total_skipped += skipped
     
-    # 画像マッピングファイルを保存
-    try:
-        with open(mapping_file, 'w', encoding='utf-8') as f:
-            json.dump(image_mapping, f, ensure_ascii=False, indent=2)
-        print(f"\n画像マッピングファイルを保存しました: {mapping_file}")
-        print(f"  マッピング数: {len(image_mapping)} 件")
-    except IOError as e:
-        print(f"⚠️  警告: 画像マッピングファイルの保存に失敗しました: {mapping_file}")
-        print(f"   エラー: {e}")
+    # 画像マッピングファイルを保存（オプション）
+    if args.image_mapping and mapping_file is not None and image_mapping is not None:
+        try:
+            with open(mapping_file, 'w', encoding='utf-8') as f:
+                json.dump(image_mapping, f, ensure_ascii=False, indent=2)
+            print(f"\n画像マッピングファイルを保存しました: {mapping_file}")
+            print(f"  マッピング数: {len(image_mapping)} 件")
+        except IOError as e:
+            print(f"⚠️  警告: 画像マッピングファイルの保存に失敗しました: {mapping_file}")
+            print(f"   エラー: {e}")
     
     # 結果を表示
     print("\n" + "=" * 80)
@@ -417,16 +474,17 @@ def main():
     generated_files = list(labels_dir.glob('*.txt'))
     print(f"生成されたラベルファイル数: {len(generated_files)} 件")
     
-    # 画像マッピングの情報を表示
-    if len(image_mapping) > 0:
-        print(f"\n画像マッピング:")
-        print(f"  マッピング数: {len(image_mapping)} 件")
-        print(f"  マッピングファイル: {mapping_file}")
-        print(f"  説明: 各ラベルファイル（<uuid>.txt）に対応する画像ファイルのパスが記録されています")
-    else:
-        print(f"\n⚠️  警告: 画像マッピングが空です")
-        print(f"   画像ファイルが見つからなかった可能性があります")
-        print(f"   確認: background_images/ディレクトリが正しい場所にあるか確認してください")
+    # 画像マッピングの情報を表示（オプション）
+    if args.image_mapping and image_mapping is not None:
+        if len(image_mapping) > 0:
+            print(f"\n画像マッピング:")
+            print(f"  マッピング数: {len(image_mapping)} 件")
+            print(f"  マッピングファイル: {mapping_file}")
+            print(f"  説明: 各ラベルファイル（<uuid>.txt）に対応する画像ファイルのパスが記録されています")
+        else:
+            print(f"\n⚠️  警告: 画像マッピングが空です")
+            print(f"   画像ファイルが見つからなかった可能性があります")
+            print(f"   確認: background_images/ディレクトリが正しい場所にあるか確認してください")
     
     if len(generated_files) == 0:
         print("⚠️  警告: ラベルファイルが1つも生成されませんでした")
