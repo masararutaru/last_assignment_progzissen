@@ -26,6 +26,9 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+# data/ 配下のNotebookはGit管理する（重い処理用）
+!data/*.ipynb
+!data/**/*.ipynb
 
 # IDE
 .vscode/

@@ -180,7 +180,25 @@ python train/train.py \
 Kaggle OCRデータセットからラベルファイル（YOLO形式）のみを生成します。
 画像はコピーせず、ラベルファイル（.txt）のみを生成するため、ディスク使用量を最小限に抑えられます。
 
-**Docker環境での実行方法**:
+### VS Code + Google Colab拡張機能での実行（推奨）
+
+重い処理はJupyter Notebookで実行できます。VS CodeのGoogle Colab拡張機能を使用してください。
+
+1. **Notebookを開く**: `preprocess_kaggle_data.ipynb` をVS Codeで開く
+2. **Google Colab拡張機能を使用**: VS Codeの拡張機能でGoogle Colabに接続
+3. **セルを順番に実行**: 各セルを実行して処理を進める
+
+**Notebookの構成**:
+- セル1: ライブラリと設定のインポート
+- セル2: パスの設定とJSONファイルの検索
+- セル3: ヘルパー関数の定義
+- セル4: データの確認（オプション）
+- セル5: **ラベルファイルの生成（重い処理）** ← ここが時間がかかります
+- セル6-8: 統計情報の表示と確認
+
+**注意**: セル2のパス設定（`SPLIT = 'train'`）を変更することで、train/val/testを切り替えられます。
+
+### Docker環境での実行方法（コマンドライン）
 
 ```bash
 # Dockerコンテナを起動
