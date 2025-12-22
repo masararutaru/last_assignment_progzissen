@@ -109,10 +109,41 @@ def extract_labels_from_sample(sample: Dict) -> List[Dict]:
     return results
 
 
+def find_image_path(uuid: str, json_path: Path) -> Path | None:
+    """
+    UUIDから対応する画像ファイルのパスを検索
+    
+    Args:
+        uuid: サンプルのUUID
+        json_path: JSONファイルのパス
+    
+    Returns:
+        画像ファイルのパス（見つからない場合はNone）
+    """
+    # JSONファイルの親ディレクトリからbackground_imagesディレクトリを探す
+    # 例: .../batch1/JSON/kaggle_data_1.json -> .../batch1/background_images/
+    json_dir = json_path.parent
+    parent_dir = json_dir.parent
+    
+    # background_imagesディレクトリを探す
+    background_images_dir = parent_dir / 'background_images'
+    if not background_images_dir.exists():
+        return None
+    
+    # 画像ファイルの拡張子を試す（.png, .jpg, .jpeg）
+    for ext in ['.png', '.jpg', '.jpeg']:
+        image_path = background_images_dir / f"{uuid}{ext}"
+        if image_path.exists():
+            return image_path
+    
+    return None
+
+
 def process_kaggle_json(
     json_path: Path,
     output_labels_dir: Path,
-    stats: defaultdict
+    stats: defaultdict,
+    image_mapping: Dict[str, str] | None = None
 ) -> tuple[int, int]:
     """
     Kaggle JSONファイルを処理してラベルファイルを生成
@@ -121,6 +152,7 @@ def process_kaggle_json(
         json_path: 処理するJSONファイルのパス
         output_labels_dir: ラベルファイルの出力先ディレクトリ
         stats: 統計情報を格納する辞書
+        image_mapping: 画像ファイルのパスマッピングを格納する辞書（uuid -> 画像パス）
     
     Returns:
         (処理済み数, スキップ数)
@@ -166,6 +198,13 @@ def process_kaggle_json(
             # 対象クラスに該当する文字がない場合はスキップ
             skipped_count += 1
             continue
+        
+        # 画像ファイルのパスを検索してマッピングに追加
+        if image_mapping is not None:
+            image_path = find_image_path(uuid, json_path)
+            if image_path is not None:
+                # 相対パスまたは絶対パスを保存（文字列として）
+                image_mapping[uuid] = str(image_path)
         
         # ラベルファイルを生成
         label_path = output_labels_dir / f"{uuid}.txt"
@@ -239,6 +278,9 @@ def main():
         print(f"   エラー: {e}")
         return
     
+    # 画像マッピングファイルのパス
+    mapping_file = target_dir / args.split / 'image_mapping.json'
+    
     print("=" * 80)
     print("Kaggle OCRデータセットのラベルファイル生成")
     print("=" * 80)
@@ -276,11 +318,24 @@ def main():
     total_processed = 0
     total_skipped = 0
     
+    # 画像ファイルのマッピング（uuid -> 画像パス）
+    image_mapping: Dict[str, str] = {}
+    
     # 各JSONファイルを処理
     for json_path in tqdm(json_files, desc="処理中"):
-        processed, skipped = process_kaggle_json(json_path, labels_dir, stats)
+        processed, skipped = process_kaggle_json(json_path, labels_dir, stats, image_mapping)
         total_processed += processed
         total_skipped += skipped
+    
+    # 画像マッピングファイルを保存
+    try:
+        with open(mapping_file, 'w', encoding='utf-8') as f:
+            json.dump(image_mapping, f, ensure_ascii=False, indent=2)
+        print(f"\n画像マッピングファイルを保存しました: {mapping_file}")
+        print(f"  マッピング数: {len(image_mapping)} 件")
+    except IOError as e:
+        print(f"⚠️  警告: 画像マッピングファイルの保存に失敗しました: {mapping_file}")
+        print(f"   エラー: {e}")
     
     # 結果を表示
     print("\n" + "=" * 80)
@@ -303,6 +358,17 @@ def main():
     # 生成されたラベルファイル数の確認
     generated_files = list(labels_dir.glob('*.txt'))
     print(f"生成されたラベルファイル数: {len(generated_files)} 件")
+    
+    # 画像マッピングの情報を表示
+    if len(image_mapping) > 0:
+        print(f"\n画像マッピング:")
+        print(f"  マッピング数: {len(image_mapping)} 件")
+        print(f"  マッピングファイル: {mapping_file}")
+        print(f"  説明: 各ラベルファイル（<uuid>.txt）に対応する画像ファイルのパスが記録されています")
+    else:
+        print(f"\n⚠️  警告: 画像マッピングが空です")
+        print(f"   画像ファイルが見つからなかった可能性があります")
+        print(f"   確認: background_images/ディレクトリが正しい場所にあるか確認してください")
     
     if len(generated_files) == 0:
         print("⚠️  警告: ラベルファイルが1つも生成されませんでした")
