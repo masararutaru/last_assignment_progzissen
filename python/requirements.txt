@@ -1,25 +1,29 @@
 # PyTorch（CPU版。GPUが必要な場合は torch を torch==2.x.x+cu118 などに変更）
+# 注意: DockerfileでPyTorchは別途固定インストールされるため、ここは参考用
 torch>=2.0.0
 torchvision>=0.15.0
 
-# ONNX関連
-onnx>=1.14.0
-onnxruntime>=1.15.0
+# ONNX関連（固定）
+onnx==1.16.0
+onnxruntime==1.18.0
 
 # 画像処理・データローダー
-Pillow>=9.0.0
-numpy>=1.24.0,<2.0.0
+Pillow==10.4.0
+
+# numpy: 1.26系で固定（numpy 2.xを防ぐ）
+numpy==1.26.4
 
 # 学習用ユーティリティ
-tqdm>=4.65.0
+tqdm==4.66.4
 
-# 設定ファイル読み込み（オプション）
-pyyaml>=6.0
+# 設定ファイル読み込み
+pyyaml==6.0.1
 
 # データセット取得用
-requests>=2.31.0
-# OpenCV: numpy<2と互換性のあるバージョンに固定（4.11系が無難）
-opencv-python-headless>=4.8.0,<4.12.0
+requests==2.31.0
+
+# OpenCV: headless版を4.11系で固定（numpy<2と互換性確保）
+opencv-python-headless==4.11.0.86
 
 # 開発用（オプション）
 # jupyter>=1.0.0

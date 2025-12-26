@@ -7,12 +7,15 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # システム依存関係のインストール（最小限に）
+# libGL1, libglib2.0-0: OpenCVのlibGL.so.1エラー対策
 RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     build-essential \
     git \
     curl \
     unzip \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -28,20 +31,36 @@ COPY python/requirements.txt ./python/requirements.txt
 
 # PyTorchをCPU版に固定（GPU版より軽量）
 # バージョンを固定することで、ビルドキャッシュが効きやすくなる
+# 注意: pip install順序を固定し、最後にnumpyを再固定して依存解決の揺れを防ぐ
 RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
     torch==2.1.0+cpu \
     torchvision==0.16.0+cpu \
-    && pip install --no-cache-dir -r python/requirements.txt
+    && pip install --no-cache-dir -r python/requirements.txt \
+    && pip install --no-cache-dir --force-reinstall numpy==1.26.4
 
 # YOLOv5リポジトリのクローン（公式export.pyを使用するため）
 # 注意: ultralytics（YOLOv8）はYOLOv5重みと前方互換性がないため、YOLOv5公式リポジトリを使用
 # /opt/yolov5 に固定配置（/app はマウント用として残す）
-RUN git clone --depth 1 https://github.com/ultralytics/yolov5.git /opt/yolov5 \
-    && pip install --no-cache-dir -r /opt/yolov5/requirements.txt
+# 安定版コミットハッシュで固定（依存の揺れを防ぐ）
+# v7.0タグのコミットハッシュを使用（export.pyがultralyticsパッケージに依存しない安定版）
+RUN git clone https://github.com/ultralytics/yolov5.git /opt/yolov5 \
+    && cd /opt/yolov5 \
+    && git checkout 915bbf294bb74c859f0b41f1c23bc395014ea679 \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --force-reinstall numpy==1.26.4
 
 # プロジェクトファイルをコピー
 COPY python ./python
+
+# ビルド時の検査: 壊れた環境を完成させない
+# numpy 1.x系であることを確認
+RUN python -c "import numpy as np; assert np.__version__.startswith('1.'), f'numpy version must be 1.x, got {np.__version__}'" \
+    && python -c "import cv2; print('✓ cv2 import OK')" \
+    && python -c "import torch; print('✓ torch import OK')" \
+    && python -c "import onnx; print('✓ onnx import OK')" \
+    && python -c "import onnxruntime as ort; print('✓ onnxruntime import OK')" \
+    && echo "✓ All critical imports verified"
 
 # デフォルトでbashを起動（compose側で常駐させる）
 CMD ["bash"]
