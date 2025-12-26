@@ -22,6 +22,10 @@ services:
       - .:/app
       - pip_cache:/root/.cache/pip
     command: ["bash", "-lc", "sleep infinity"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
     # GPUが必要な場合は以下をコメントアウト
     # deploy:
     #   resources:

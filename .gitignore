@@ -59,3 +59,8 @@ python/*.pyc
 python/venv/
 python/env/
 python/.venv
+
+# ONNXモデルファイル（通常数MB〜数十MBのためgitに含めない）
+# S3からダウンロードするか、export_onnx.pyで生成してください
+assets/model.onnx
+assets/*.onnx
