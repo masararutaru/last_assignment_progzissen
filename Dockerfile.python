@@ -34,6 +34,13 @@ RUN pip install --no-cache-dir \
     torchvision==0.16.0+cpu \
     && pip install --no-cache-dir -r python/requirements.txt
 
+# YOLOv5リポジトリのクローン（公式export.pyを使用するため）
+# 注意: ultralytics（YOLOv8）はYOLOv5重みと前方互換性がないため、YOLOv5公式リポジトリを使用
+RUN git clone --depth 1 https://github.com/ultralytics/yolov5.git /app/yolov5 \
+    && cd /app/yolov5 \
+    && pip install --no-cache-dir -r requirements.txt \
+    && cd /app
+
 # プロジェクトファイルをコピー
 COPY python ./python
 

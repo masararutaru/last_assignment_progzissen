@@ -862,8 +862,12 @@ python python/export_onnx.py \
 ```
 
 **前提条件**:
-- `ultralytics>=8.0.0`がインストールされていること（Dockerコンテナ内には既にインストール済み）
+- YOLOv5リポジトリがクローンされていること（Dockerコンテナ内には自動的にクローン済み）
 - `assets`ディレクトリに`.pt`ファイルが配置されていること
+
+**注意**: 
+- 本スクリプトはYOLOv5公式の`export.py`を使用します（`ultralytics`/YOLOv8は使用しません）
+- YOLOv5で学習した`.pt`ファイルはYOLOv8と前方互換性がないため、YOLOv5公式ツールを使用します
 
 ### モデルの配置
 

@@ -19,6 +19,7 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
 
 注意:
     - YOLOv5の.ptファイルをONNX形式に変換します
+    - YOLOv5公式のexport.pyを使用します（ultralytics/YOLOv8は使用しません）
     - NMS や TopK などの後処理はモデル内部に入れず、Java側で実装すること
     - 入力サイズは640x640を推奨（YOLOv5のデフォルト）
     - プロジェクトルートから実行すると、自動的にassets/model.onnxに出力されます
@@ -27,7 +28,8 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
 
 import argparse
 import sys
-import torch
+import subprocess
+import shutil
 from pathlib import Path
 
 
@@ -59,60 +61,52 @@ def find_project_root(start_path: Path = None) -> Path:
     return start_path.parent.parent
 
 
-def load_yolov5_model(checkpoint_path: Path, device: str = "cpu"):
+def find_yolov5_repo(project_root: Path) -> Path:
     """
-    YOLOv5モデルをロードする（ultralyticsパッケージを使用）
+    YOLOv5リポジトリのパスを検出する
     
     Args:
-        checkpoint_path: .ptファイルのパス
-        device: デバイス（'cpu' または 'cuda'）
+        project_root: プロジェクトルートのパス
     
     Returns:
-        YOLOモデルインスタンス
+        YOLOv5リポジトリのパス
     """
-    try:
-        from ultralytics import YOLO
-    except ImportError as e:
-        error_msg = str(e)
-        # OpenCV関連のエラー（libGL.so.1など）を検出
-        if "libGL.so" in error_msg or "cv2" in error_msg.lower():
-            raise ImportError(
-                f"OpenCV import error detected: {error_msg}\n"
-                "This is likely due to missing GUI dependencies (libGL.so.1).\n"
-                "Solution: Use opencv-python-headless instead of opencv-python:\n"
-                "  pip uninstall -y opencv-python opencv-contrib-python\n"
-                "  pip install opencv-python-headless"
-            ) from e
-        raise ImportError(
-            "ultralytics package is not installed or failed to import. "
-            f"Original error: {error_msg}\n"
-            "Install it with: pip install ultralytics>=8.0.0"
-        ) from e
+    # Docker環境では /app/yolov5 にクローンされている
+    # ローカル環境では project_root/yolov5 を探す
+    possible_paths = [
+        Path("/app/yolov5"),  # Docker環境
+        project_root / "yolov5",  # ローカル環境
+        Path.cwd() / "yolov5",  # カレントディレクトリ
+    ]
     
-    print(f"[INFO] Loading YOLOv5 model from: {checkpoint_path}")
+    for yolov5_path in possible_paths:
+        if yolov5_path.exists() and (yolov5_path / "export.py").exists():
+            return yolov5_path
     
-    # YOLOモデルをロード
-    model = YOLO(str(checkpoint_path))
-    
-    print(f"[OK] Model loaded successfully")
-    print(f"  Model type: {type(model).__name__}")
-    
-    return model
+    raise FileNotFoundError(
+        "YOLOv5 repository not found. Expected locations:\n"
+        "  - /app/yolov5 (Docker environment)\n"
+        "  - {project_root}/yolov5 (Local environment)\n"
+        "Please ensure YOLOv5 is cloned:\n"
+        "  git clone https://github.com/ultralytics/yolov5.git"
+    )
 
 
 def export_yolov5_to_onnx(
-    model,
+    checkpoint_path: Path,
     output_path: Path,
+    yolov5_repo_path: Path,
     imgsz: int = 640,
     opset_version: int = 17,
     simplify: bool = True,
 ):
     """
-    YOLOv5モデルをONNX形式に書き出す
+    YOLOv5モデルをONNX形式に書き出す（YOLOv5公式export.pyを使用）
     
     Args:
-        model: ultralytics YOLOモデルインスタンス
+        checkpoint_path: .ptファイルのパス
         output_path: 出力ONNXファイルのパス
+        yolov5_repo_path: YOLOv5リポジトリのパス
         imgsz: 入力画像サイズ（デフォルト640）
         opset_version: ONNX opsetバージョン（デフォルト17）
         simplify: ONNX Simplifierを使用するか（デフォルトTrue）
@@ -123,51 +117,73 @@ def export_yolov5_to_onnx(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    print(f"[INFO] Exporting YOLOv5 model to ONNX...")
+    print(f"[INFO] Exporting YOLOv5 model to ONNX using official export.py...")
+    print(f"  Checkpoint: {checkpoint_path}")
     print(f"  Input size: {imgsz}x{imgsz}")
     print(f"  Output path: {output_path}")
     print(f"  Opset version: {opset_version}")
     
     try:
-        # ultralyticsのexportメソッドを使用
-        # これにより、YOLOv5のONNXエクスポートが自動的に処理される
-        # export()は出力ファイルのパスを返す
-        exported_path = model.export(
-            format="onnx",
-            imgsz=imgsz,
-            opset=opset_version,
-            simplify=simplify,
-            dynamic=False,  # 固定サイズ（Java側で扱いやすい）
+        # YOLOv5公式のexport.pyを実行
+        export_script = yolov5_repo_path / "export.py"
+        if not export_script.exists():
+            raise FileNotFoundError(
+                f"YOLOv5 export.py not found at: {export_script}"
+            )
+        
+        # export.pyの引数を構築
+        cmd = [
+            sys.executable,
+            str(export_script),
+            "--weights", str(checkpoint_path),
+            "--imgsz", str(imgsz),
+            "--opset", str(opset_version),
+            "--include", "onnx",
+        ]
+        
+        if simplify:
+            cmd.append("--simplify")
+        
+        # 実行
+        print(f"[INFO] Running: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            cwd=str(yolov5_repo_path),
+            capture_output=True,
+            text=True,
+            check=False
         )
         
-        # 出力ファイルのパスを取得
-        exported_path = Path(exported_path) if exported_path else None
+        if result.returncode != 0:
+            print(f"[ERROR] YOLOv5 export.py failed:")
+            print(result.stderr)
+            raise RuntimeError(f"Export failed with return code {result.returncode}")
         
-        # 見つからない場合、元のチェックポイントファイルの場所を基準に探す
-        if not exported_path or not exported_path.exists():
-            # モデルのckpt_path属性から元のファイルパスを取得
-            if hasattr(model, 'ckpt_path') and model.ckpt_path:
-                checkpoint_path = Path(model.ckpt_path)
-                exported_path = checkpoint_path.parent / f"{checkpoint_path.stem}.onnx"
-            else:
-                # フォールバック: カレントディレクトリを探す
-                possible_names = ["yolov5n.onnx", "model.onnx", "best.onnx", "last.onnx"]
-                for name in possible_names:
-                    candidate = Path.cwd() / name
-                    if candidate.exists():
-                        exported_path = candidate
-                        break
+        # 出力ファイルを探す（export.pyはチェックポイントと同じディレクトリに出力する）
+        checkpoint_dir = checkpoint_path.parent
+        checkpoint_stem = checkpoint_path.stem
+        exported_path = checkpoint_dir / f"{checkpoint_stem}.onnx"
         
-        if not exported_path or not exported_path.exists():
+        # 見つからない場合、yolov5リポジトリ内を探す
+        if not exported_path.exists():
+            possible_paths = [
+                yolov5_repo_path / f"{checkpoint_stem}.onnx",
+                yolov5_repo_path / "runs" / "train" / "exp" / f"{checkpoint_stem}.onnx",
+            ]
+            for path in possible_paths:
+                if path.exists():
+                    exported_path = path
+                    break
+        
+        if not exported_path.exists():
             raise FileNotFoundError(
                 f"ONNX file not found after export. "
-                f"Expected location: {exported_path}. "
-                "Check ultralytics export output."
+                f"Checked: {exported_path} and other locations. "
+                "Check YOLOv5 export.py output."
             )
         
         # 指定された場所に移動（必要に応じて）
         if exported_path.resolve() != output_path.resolve():
-            import shutil
             shutil.move(str(exported_path), str(output_path))
             print(f"[OK] Moved ONNX file to: {output_path}")
         else:
@@ -244,6 +260,10 @@ Examples:
     --checkpoint ../assets/best.pt \\
     --output ../assets/model.onnx \\
     --verify
+
+Note:
+  - This script uses YOLOv5 official export.py (not ultralytics/YOLOv8)
+  - YOLOv5 weights are NOT forward compatible with YOLOv8
         """
     )
     
@@ -317,14 +337,16 @@ Examples:
             f"Please place your .pt file in the assets directory (e.g., assets/best.pt)"
         )
     
-    # YOLOv5モデルをロード
-    model = load_yolov5_model(checkpoint_path, device="cpu")
+    # YOLOv5リポジトリのパスを取得
+    yolov5_repo_path = find_yolov5_repo(project_root)
+    print(f"[INFO] YOLOv5 repository: {yolov5_repo_path}")
     
-    # ONNXに書き出す
+    # ONNXに書き出す（YOLOv5公式export.pyを使用）
     output_path = Path(args.output)
     export_yolov5_to_onnx(
-        model=model,
+        checkpoint_path=checkpoint_path,
         output_path=output_path,
+        yolov5_repo_path=yolov5_repo_path,
         imgsz=args.imgsz,
         opset_version=args.opset,
         simplify=not args.no_simplify,

@@ -16,12 +16,10 @@ tqdm>=4.65.0
 # 設定ファイル読み込み（オプション）
 pyyaml>=6.0
 
-# YOLOv5（Ultralytics）
-ultralytics>=8.0.0
-
 # データセット取得用
 requests>=2.31.0
-opencv-python-headless>=4.8.0
+# OpenCV: numpy<2と互換性のあるバージョンに固定（4.11系が無難）
+opencv-python-headless>=4.8.0,<4.12.0
 
 # 開発用（オプション）
 # jupyter>=1.0.0
