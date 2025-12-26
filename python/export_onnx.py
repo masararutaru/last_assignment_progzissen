@@ -71,12 +71,13 @@ def find_yolov5_repo(project_root: Path) -> Path:
     Returns:
         YOLOv5リポジトリのパス
     """
-    # Docker環境では /app/yolov5 にクローンされている
+    # Docker環境では /opt/yolov5 にクローンされている（推奨）
     # ローカル環境では project_root/yolov5 を探す
     possible_paths = [
-        Path("/app/yolov5"),  # Docker環境
+        Path("/opt/yolov5"),      # ★追加（推奨・Docker環境）
+        Path("/app/yolov5"),      # Docker環境（旧パス）
         project_root / "yolov5",  # ローカル環境
-        Path.cwd() / "yolov5",  # カレントディレクトリ
+        Path.cwd() / "yolov5",   # カレントディレクトリ
     ]
     
     for yolov5_path in possible_paths:
@@ -85,7 +86,8 @@ def find_yolov5_repo(project_root: Path) -> Path:
     
     raise FileNotFoundError(
         "YOLOv5 repository not found. Expected locations:\n"
-        "  - /app/yolov5 (Docker environment)\n"
+        "  - /opt/yolov5 (Docker environment, recommended)\n"
+        "  - /app/yolov5 (Docker environment, legacy)\n"
         "  - {project_root}/yolov5 (Local environment)\n"
         "Please ensure YOLOv5 is cloned:\n"
         "  git clone https://github.com/ultralytics/yolov5.git"

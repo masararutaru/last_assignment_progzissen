@@ -36,8 +36,9 @@ RUN pip install --no-cache-dir \
 
 # YOLOv5リポジトリのクローン（公式export.pyを使用するため）
 # 注意: ultralytics（YOLOv8）はYOLOv5重みと前方互換性がないため、YOLOv5公式リポジトリを使用
-RUN git clone --depth 1 https://github.com/ultralytics/yolov5.git /app/yolov5 \
-    && pip install --no-cache-dir -r /app/yolov5/requirements.txt
+# /opt/yolov5 に固定配置（/app はマウント用として残す）
+RUN git clone --depth 1 https://github.com/ultralytics/yolov5.git /opt/yolov5 \
+    && pip install --no-cache-dir -r /opt/yolov5/requirements.txt
 
 # プロジェクトファイルをコピー
 COPY python ./python
