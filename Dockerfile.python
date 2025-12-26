@@ -32,13 +32,7 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu \
     torch==2.1.0+cpu \
     torchvision==0.16.0+cpu \
-    && pip install --no-cache-dir \
-    onnx>=1.14.0 \
-    onnxruntime>=1.15.0 \
-    Pillow>=9.0.0 \
-    "numpy>=1.24.0,<2.0.0" \
-    tqdm>=4.65.0 \
-    pyyaml>=6.0
+    && pip install --no-cache-dir -r python/requirements.txt
 
 # プロジェクトファイルをコピー
 COPY python ./python
