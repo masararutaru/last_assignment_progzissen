@@ -72,11 +72,22 @@ def load_yolov5_model(checkpoint_path: Path, device: str = "cpu"):
     """
     try:
         from ultralytics import YOLO
-    except ImportError:
+    except ImportError as e:
+        error_msg = str(e)
+        # OpenCV関連のエラー（libGL.so.1など）を検出
+        if "libGL.so" in error_msg or "cv2" in error_msg.lower():
+            raise ImportError(
+                f"OpenCV import error detected: {error_msg}\n"
+                "This is likely due to missing GUI dependencies (libGL.so.1).\n"
+                "Solution: Use opencv-python-headless instead of opencv-python:\n"
+                "  pip uninstall -y opencv-python opencv-contrib-python\n"
+                "  pip install opencv-python-headless"
+            ) from e
         raise ImportError(
-            "ultralytics package is not installed. "
+            "ultralytics package is not installed or failed to import. "
+            f"Original error: {error_msg}\n"
             "Install it with: pip install ultralytics>=8.0.0"
-        )
+        ) from e
     
     print(f"[INFO] Loading YOLOv5 model from: {checkpoint_path}")
     
