@@ -11,8 +11,16 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends \
     build-essential \
     git \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# AWS CLIのインストール
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
 
 # Python依存関係のインストール
 # PyTorchはCPU版を明示的に指定してサイズを削減
@@ -28,7 +36,7 @@ RUN pip install --no-cache-dir \
     onnx>=1.14.0 \
     onnxruntime>=1.15.0 \
     Pillow>=9.0.0 \
-    numpy>=1.24.0 \
+    "numpy>=1.24.0,<2.0.0" \
     tqdm>=4.65.0 \
     pyyaml>=6.0
 
