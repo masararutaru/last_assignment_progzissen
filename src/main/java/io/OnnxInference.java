@@ -1,0 +1,379 @@
+package io;
+
+import ai.onnxruntime.*;
+import parse.*;
+
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.nio.FloatBuffer;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * ONNX Runtimeを使用したYOLOv5推論クラス
+ * 
+ * 画像を入力として、検出結果（bbox + クラス + スコア）を返す。
+ * NMSとスコアフィルタリングは後処理として実装。
+ */
+public class OnnxInference implements AutoCloseable {
+    
+    private final OrtEnvironment env;
+    private final OrtSession session;
+    private final int inputSize;  // 640 (YOLOv5標準)
+    private final int numClasses; // 19 (数字10 + 演算子5 + 変数1 + 括弧2 + その他)
+    
+    // 後処理パラメータ
+    private double confidenceThreshold = 0.15;  // Recall寄り（取りこぼしを減らす）
+    private double nmsIouThreshold = 0.45;
+    
+    /**
+     * ONNXモデルを読み込む
+     * 
+     * @param modelPath ONNXモデルファイルのパス（例: "assets/model.onnx"）
+     * @throws OrtException ONNX Runtimeのエラー
+     */
+    public OnnxInference(String modelPath) throws OrtException {
+        this.env = OrtEnvironment.getEnvironment();
+        OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
+        opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
+        opts.setIntraOpNumThreads(4);  // CPU推論用
+        
+        File modelFile = new File(modelPath);
+        if (!modelFile.exists()) {
+            throw new IllegalArgumentException("ONNX model not found: " + modelPath);
+        }
+        
+        this.session = env.createSession(modelPath, opts);
+        this.inputSize = 640;  // YOLOv5標準
+        this.numClasses = 19;  // 19クラス（数字10 + 演算子5 + 変数1 + 括弧2 + その他）
+        
+        // モデル情報を表示
+        printModelInfo();
+    }
+    
+    /**
+     * モデルの入力・出力情報を表示（デバッグ用）
+     */
+    private void printModelInfo() {
+        try {
+            System.out.println("[ONNX] Model loaded successfully");
+            System.out.println("  Inputs:");
+            for (NodeInfo input : session.getInputInfo().values()) {
+                System.out.println("    " + input.getName() + ": " + input.getInfo().toString());
+            }
+            System.out.println("  Outputs:");
+            for (NodeInfo output : session.getOutputInfo().values()) {
+                System.out.println("    " + output.getName() + ": " + output.getInfo().toString());
+            }
+        } catch (Exception e) {
+            System.err.println("[WARN] Failed to print model info: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 画像から検出結果を取得
+     * 
+     * @param image 入力画像（任意サイズ）
+     * @param imageW 画像の幅（元のサイズ）
+     * @param imageH 画像の高さ（元のサイズ）
+     * @return 検出結果（Detectionオブジェクト）
+     * @throws OrtException ONNX Runtimeのエラー
+     */
+    public Detection detect(BufferedImage image, int imageW, int imageH) throws OrtException {
+        // 1. 前処理：画像を640x640にリサイズして正規化
+        float[][][] preprocessed = preprocessImage(image);
+        
+        // 2. ONNX推論実行
+        float[][][] rawOutput = runInference(preprocessed);
+        
+        // 3. 後処理：NMS + スコアフィルタリング
+        List<DetSymbol> detections = postProcess(rawOutput, imageW, imageH);
+        
+        return new Detection(imageW, imageH, detections);
+    }
+    
+    /**
+     * 画像の前処理（リサイズ + 正規化）
+     * 
+     * @param image 入力画像
+     * @return 正規化済み画像データ [3][640][640] (RGB, 0.0-1.0)
+     */
+    private float[][][] preprocessImage(BufferedImage image) {
+        // 640x640にリサイズ（アスペクト比を保持してパディング）
+        BufferedImage resized = resizeWithPadding(image, inputSize, inputSize);
+        
+        // RGBに変換して正規化（0-255 → 0.0-1.0）
+        float[][][] normalized = new float[3][inputSize][inputSize];
+        
+        for (int y = 0; y < inputSize; y++) {
+            for (int x = 0; x < inputSize; x++) {
+                int rgb = resized.getRGB(x, y);
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+                
+                // 0-255 → 0.0-1.0 に正規化
+                normalized[0][y][x] = r / 255.0f;  // R
+                normalized[1][y][x] = g / 255.0f;  // G
+                normalized[2][y][x] = b / 255.0f;  // B
+            }
+        }
+        
+        return normalized;
+    }
+    
+    /**
+     * アスペクト比を保持してリサイズ（パディング付き）
+     * 
+     * @param image 元画像
+     * @param targetW 目標幅
+     * @param targetH 目標高さ
+     * @return リサイズ済み画像（白背景でパディング）
+     */
+    private BufferedImage resizeWithPadding(BufferedImage image, int targetW, int targetH) {
+        int srcW = image.getWidth();
+        int srcH = image.getHeight();
+        
+        // スケール比を計算（小さい方に合わせる）
+        double scale = Math.min((double) targetW / srcW, (double) targetH / srcH);
+        int newW = (int) (srcW * scale);
+        int newH = (int) (srcH * scale);
+        
+        // リサイズ
+        BufferedImage resized = new BufferedImage(newW, newH, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = resized.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, 
+                          java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.drawImage(image, 0, 0, newW, newH, null);
+        g.dispose();
+        
+        // 白背景でパディング
+        BufferedImage padded = new BufferedImage(targetW, targetH, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g2 = padded.createGraphics();
+        g2.setColor(java.awt.Color.WHITE);
+        g2.fillRect(0, 0, targetW, targetH);
+        int offsetX = (targetW - newW) / 2;
+        int offsetY = (targetH - newH) / 2;
+        g2.drawImage(resized, offsetX, offsetY, null);
+        g2.dispose();
+        
+        return padded;
+    }
+    
+    /**
+     * ONNX推論を実行
+     * 
+     * @param preprocessed 前処理済み画像データ [3][640][640]
+     * @return 生の推論結果 [1][num_detections][5+num_classes]
+     * @throws OrtException ONNX Runtimeのエラー
+     */
+    private float[][][] runInference(float[][][] preprocessed) throws OrtException {
+        // ONNX Runtimeの入力形式に変換: [1, 3, 640, 640]
+        long[] shape = {1, 3, inputSize, inputSize};
+        float[] flatData = new float[3 * inputSize * inputSize];
+        
+        int idx = 0;
+        for (int c = 0; c < 3; c++) {
+            for (int y = 0; y < inputSize; y++) {
+                for (int x = 0; x < inputSize; x++) {
+                    flatData[idx++] = preprocessed[c][y][x];
+                }
+            }
+        }
+        
+        // ONNX Tensor作成
+        OnnxTensor tensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(flatData), shape);
+        
+        OrtSession.Result outputs = null;
+        try {
+            // 推論実行
+            String inputName = session.getInputNames().iterator().next();
+            Map<String, OnnxTensor> inputs = Collections.singletonMap(inputName, tensor);
+            
+            outputs = session.run(inputs);
+            
+            // 出力を取得（YOLOv5の出力は通常 [1, num_detections, 5+num_classes]）
+            OnnxValue outputValue = outputs.get(0);
+            float[][][] result = (float[][][]) outputValue.getValue();
+            
+            return result;
+            
+        } finally {
+            tensor.close();
+            if (outputs != null) {
+                outputs.close();
+            }
+        }
+    }
+    
+    /**
+     * 後処理：NMS + スコアフィルタリング
+     * 
+     * @param rawOutput 生の推論結果 [batch][num_detections][5+num_classes]
+     * @param imageW 元画像の幅
+     * @param imageH 元画像の高さ
+     * @return 検出シンボルのリスト
+     */
+    private List<DetSymbol> postProcess(float[][][] rawOutput, int imageW, int imageH) {
+        // rawOutput: [1][num_detections][5+num_classes]
+        // 5 = 4 (bbox: cx, cy, w, h) + 1 (objectness)
+        float[][] detections = rawOutput[0];  // [num_detections][5+num_classes]
+        
+        List<DetectionCandidate> candidates = new ArrayList<>();
+        
+        // 各検出候補をパース
+        for (float[] det : detections) {
+            // bbox: [cx, cy, w, h] (正規化座標 0.0-1.0)
+            double cx = det[0];
+            double cy = det[1];
+            double w = det[2];
+            double h = det[3];
+            double objectness = det[4];
+            
+            // クラス確率を取得
+            double maxScore = 0.0;
+            int bestClass = -1;
+            for (int c = 0; c < numClasses; c++) {
+                double classScore = det[5 + c];
+                double totalScore = objectness * classScore;
+                if (totalScore > maxScore) {
+                    maxScore = totalScore;
+                    bestClass = c;
+                }
+            }
+            
+            // スコア閾値でフィルタリング
+            if (maxScore >= confidenceThreshold && bestClass >= 0) {
+                // 正規化座標 → ピクセル座標に変換
+                double x1 = (cx - w / 2.0) * imageW;
+                double y1 = (cy - h / 2.0) * imageH;
+                double x2 = (cx + w / 2.0) * imageW;
+                double y2 = (cy + h / 2.0) * imageH;
+                
+                BBox bbox = new BBox(x1, y1, x2, y2);
+                candidates.add(new DetectionCandidate(bestClass, maxScore, bbox));
+            }
+        }
+        
+        // NMS実行
+        List<DetectionCandidate> nmsResult = nonMaxSuppression(candidates, nmsIouThreshold);
+        
+        // DetSymbolに変換（LabelMapを使用してクラスID → トークン変換）
+        LabelMap labelMap = new LabelMap();
+        return nmsResult.stream()
+            .map(cand -> {
+                String cls = labelMap.getClassLabel(cand.classId);
+                String token = labelMap.getToken(cls);
+                return new DetSymbol(cls, token, cand.score, cand.bbox);
+            })
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * NMS（Non-Maximum Suppression）実装
+     * 
+     * @param candidates 検出候補リスト
+     * @param iouThreshold IoU閾値
+     * @return NMS後の検出結果
+     */
+    private List<DetectionCandidate> nonMaxSuppression(
+            List<DetectionCandidate> candidates, double iouThreshold) {
+        
+        if (candidates.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // スコアでソート（降順）
+        candidates.sort((a, b) -> Double.compare(b.score, a.score));
+        
+        List<DetectionCandidate> result = new ArrayList<>();
+        boolean[] suppressed = new boolean[candidates.size()];
+        
+        for (int i = 0; i < candidates.size(); i++) {
+            if (suppressed[i]) continue;
+            
+            DetectionCandidate current = candidates.get(i);
+            result.add(current);
+            
+            // 残りの候補でIoUを計算して抑制
+            for (int j = i + 1; j < candidates.size(); j++) {
+                if (suppressed[j]) continue;
+                
+                DetectionCandidate other = candidates.get(j);
+                double iou = computeIoU(current.bbox, other.bbox);
+                
+                if (iou > iouThreshold) {
+                    suppressed[j] = true;
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * IoU（Intersection over Union）を計算
+     * 
+     * @param box1 バウンディングボックス1
+     * @param box2 バウンディングボックス2
+     * @return IoU値（0.0-1.0）
+     */
+    private double computeIoU(BBox box1, BBox box2) {
+        // 交差領域
+        double x1 = Math.max(box1.x1, box2.x1);
+        double y1 = Math.max(box1.y1, box2.y1);
+        double x2 = Math.min(box1.x2, box2.x2);
+        double y2 = Math.min(box1.y2, box2.y2);
+        
+        if (x2 <= x1 || y2 <= y1) {
+            return 0.0;  // 交差なし
+        }
+        
+        double intersection = (x2 - x1) * (y2 - y1);
+        double area1 = box1.w() * box1.h();
+        double area2 = box2.w() * box2.h();
+        double union = area1 + area2 - intersection;
+        
+        return union > 0 ? intersection / union : 0.0;
+    }
+    
+    /**
+     * 検出候補の内部クラス
+     */
+    private static class DetectionCandidate {
+        final int classId;
+        final double score;
+        final BBox bbox;
+        
+        DetectionCandidate(int classId, double score, BBox bbox) {
+            this.classId = classId;
+            this.score = score;
+            this.bbox = bbox;
+        }
+    }
+    
+    /**
+     * リソースを解放
+     */
+    @Override
+    public void close() throws OrtException {
+        if (session != null) {
+            session.close();
+        }
+    }
+    
+    /**
+     * 信頼度閾値を設定
+     */
+    public void setConfidenceThreshold(double threshold) {
+        this.confidenceThreshold = threshold;
+    }
+    
+    /**
+     * NMS IoU閾値を設定
+     */
+    public void setNmsIouThreshold(double threshold) {
+        this.nmsIouThreshold = threshold;
+    }
+}
+

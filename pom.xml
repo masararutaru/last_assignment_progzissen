@@ -26,6 +26,13 @@
       <artifactId>json</artifactId>
       <version>20240303</version>
     </dependency>
+    
+    <!-- ONNX Runtime Java（CPU版） -->
+    <dependency>
+      <groupId>com.microsoft.onnxruntime</groupId>
+      <artifactId>onnxruntime</artifactId>
+      <version>1.18.0</version>
+    </dependency>
   </dependencies>
 
   <!-- 実行用プラグイン -->

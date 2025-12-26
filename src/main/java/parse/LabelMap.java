@@ -4,6 +4,7 @@ import java.util.*;
 
 public class LabelMap {
     private final Map<String, String> map = new HashMap<>();
+    private final String[] idToClass;  // クラスID → クラス名のマッピング
 
     public LabelMap() {
         // 例：モデル側のクラス名に合わせて調整していく
@@ -29,6 +30,38 @@ public class LabelMap {
         // 分数バーが専用クラスとして出るなら：
         // map.put("frac_bar", "FRAC_BAR");
         // みたいに内部トークンとして扱える
+        
+        // クラスID → クラス名のマッピング（YOLOv5の19クラス）
+        // 順序: 数字0-9, 演算子+,-,*,/,=, 変数x, 括弧(,)
+        idToClass = new String[]{
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",  // 0-9: 数字
+            "+", "-", "*", "/", "=",                            // 10-14: 演算子
+            "x",                                                 // 15: 変数
+            "(", ")"                                             // 16-17: 括弧
+        };
+    }
+
+    /**
+     * クラスIDからクラス名を取得
+     * 
+     * @param classId クラスID（0-18）
+     * @return クラス名（例: "0", "+", "x"）
+     */
+    public String getClassLabel(int classId) {
+        if (classId < 0 || classId >= idToClass.length) {
+            throw new IllegalArgumentException("Invalid class ID: " + classId);
+        }
+        return idToClass[classId];
+    }
+
+    /**
+     * クラス名からトークンに変換
+     * 
+     * @param cls クラス名（例: "digit_3", "+", "sin"）
+     * @return トークン（例: "3", "+", "sin"）
+     */
+    public String getToken(String cls) {
+        return toToken(cls);
     }
 
     public String toToken(String cls) {
