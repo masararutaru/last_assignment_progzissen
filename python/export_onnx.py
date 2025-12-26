@@ -6,15 +6,14 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
     # Dockerコンテナ内: cd /app
     # ローカル環境: プロジェクトルート（pom.xmlがあるディレクトリ）に移動
     
-    # S3からダウンロードして変換（--output省略可、自動でassets/model.onnxに出力）
+    # assetsディレクトリ内のptファイルから変換（--output省略可、自動でassets/model.onnxに出力）
     python python/export_onnx.py \\
-      --s3-bucket km62m-ml-storage \\
-      --s3-key yolo-dataset/v1/weights/run_xxx/best.pt \\
+      --checkpoint assets/best.pt \\
       --verify
     
-    # ローカルファイルから変換
+    # 別のパスから変換
     python python/export_onnx.py \\
-      --checkpoint python/weights/best.pt \\
+      --checkpoint assets/model.pt \\
       --output assets/model.onnx \\
       --verify
 
@@ -23,11 +22,10 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
     - NMS や TopK などの後処理はモデル内部に入れず、Java側で実装すること
     - 入力サイズは640x640を推奨（YOLOv5のデフォルト）
     - プロジェクトルートから実行すると、自動的にassets/model.onnxに出力されます
+    - ptファイルはassetsディレクトリに配置してください
 """
 
 import argparse
-import os
-import subprocess
 import sys
 import torch
 from pathlib import Path
@@ -59,67 +57,6 @@ def find_project_root(start_path: Path = None) -> Path:
     
     # 見つからない場合は、スクリプトの2階層上（python/export_onnx.py → プロジェクトルート）
     return start_path.parent.parent
-
-
-def download_from_s3(s3_bucket: str, s3_key: str, local_path: Path) -> Path:
-    """
-    S3からファイルをダウンロードする
-    
-    Args:
-        s3_bucket: S3バケット名
-        s3_key: S3キー（パス）
-        local_path: ローカル保存先パス
-    
-    Returns:
-        ダウンロードしたファイルのパス
-    """
-    s3_path = f"s3://{s3_bucket}/{s3_key}"
-    
-    print(f"[INFO] Downloading from S3...")
-    print(f"  S3 path: {s3_path}")
-    print(f"  Local path: {local_path}")
-    
-    # AWS CLIがインストールされているか確認
-    try:
-        subprocess.run(["aws", "--version"], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        raise RuntimeError(
-            "AWS CLI is not installed or not in PATH. "
-            "Please install AWS CLI or use --checkpoint with local file path."
-        )
-    
-    # AWS認証情報の確認
-    aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
-    aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-    aws_region = os.environ.get("AWS_DEFAULT_REGION")
-    aws_profile = os.environ.get("AWS_PROFILE")
-    
-    if not aws_access_key and not aws_profile:
-        print("[WARN] AWS_ACCESS_KEY_ID not found in environment.")
-        print("  Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or configure AWS CLI.")
-    elif aws_access_key and not aws_secret_key:
-        print("[WARN] AWS_SECRET_ACCESS_KEY not found in environment.")
-        print("  Set AWS_SECRET_ACCESS_KEY for S3 access.")
-    
-    if aws_region:
-        print(f"[INFO] Using AWS region: {aws_region}")
-    elif not aws_profile:
-        print("[INFO] AWS_DEFAULT_REGION not set, using default region from AWS CLI config.")
-    
-    # ダウンロード実行
-    try:
-        subprocess.run(
-            ["aws", "s3", "cp", s3_path, str(local_path)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        size_mb = local_path.stat().st_size / (1024 * 1024)
-        print(f"[OK] Downloaded: {size_mb:.2f} MB")
-        return local_path
-    except subprocess.CalledProcessError as e:
-        print(f"[ERROR] S3 download failed: {e.stderr}")
-        raise
 
 
 def load_yolov5_model(checkpoint_path: Path, device: str = "cpu"):
@@ -279,45 +216,31 @@ Examples:
   # Dockerコンテナ内: cd /app
   # ローカル環境: プロジェクトルート（pom.xmlがあるディレクトリ）に移動
   
-  # S3からダウンロードして変換（--output省略可、自動でassets/model.onnxに出力）
+  # assetsディレクトリ内のptファイルから変換（--output省略可、自動でassets/model.onnxに出力）
   python python/export_onnx.py \\
-    --s3-bucket km62m-ml-storage \\
-    --s3-key yolo-dataset/v1/weights/run_xxx/best.pt \\
+    --checkpoint assets/best.pt \\
     --verify
   
-  # ローカルファイルから変換
+  # 別のパスから変換
   python python/export_onnx.py \\
-    --checkpoint python/weights/best.pt \\
+    --checkpoint assets/model.pt \\
     --output assets/model.onnx \\
     --verify
   
   # python/ディレクトリから実行する場合
   cd python
   python export_onnx.py \\
-    --s3-bucket km62m-ml-storage \\
-    --s3-key yolo-dataset/v1/weights/run_xxx/best.pt \\
+    --checkpoint ../assets/best.pt \\
     --output ../assets/model.onnx \\
     --verify
         """
     )
     
-    # チェックポイントの指定方法（ローカル or S3）
-    checkpoint_group = parser.add_mutually_exclusive_group(required=True)
-    checkpoint_group.add_argument(
+    parser.add_argument(
         '--checkpoint',
         type=str,
-        help='Path to local PyTorch checkpoint file (.pt)'
-    )
-    checkpoint_group.add_argument(
-        '--s3-bucket',
-        type=str,
-        help='S3 bucket name (use with --s3-key)'
-    )
-    
-    parser.add_argument(
-        '--s3-key',
-        type=str,
-        help='S3 key (path) to checkpoint file (use with --s3-bucket)'
+        required=True,
+        help='Path to local PyTorch checkpoint file (.pt). Recommended: assets/best.pt or assets/model.pt'
     )
     
     parser.add_argument(
@@ -369,27 +292,19 @@ Examples:
     print(f"[INFO] Output path: {args.output}")
     
     # チェックポイントパスの解決
-    checkpoint_path = None
+    checkpoint_path = Path(args.checkpoint)
     
-    if args.checkpoint:
-        # ローカルファイル
-        checkpoint_path = Path(args.checkpoint)
-        if not checkpoint_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    elif args.s3_bucket and args.s3_key:
-        # S3からダウンロード
-        temp_dir = Path.cwd() / "tmp_weights"
-        temp_dir.mkdir(exist_ok=True)
-        checkpoint_filename = Path(args.s3_key).name
-        local_temp_path = temp_dir / checkpoint_filename
-        
-        checkpoint_path = download_from_s3(
-            s3_bucket=args.s3_bucket,
-            s3_key=args.s3_key,
-            local_path=local_temp_path,
+    # 相対パスの場合はプロジェクトルート基準に変換
+    if not checkpoint_path.is_absolute():
+        checkpoint_path = project_root / checkpoint_path
+    
+    checkpoint_path = checkpoint_path.resolve()
+    
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(
+            f"Checkpoint not found: {checkpoint_path}\n"
+            f"Please place your .pt file in the assets directory (e.g., assets/best.pt)"
         )
-    else:
-        parser.error("Either --checkpoint or both --s3-bucket and --s3-key must be specified")
     
     # YOLOv5モデルをロード
     model = load_yolov5_model(checkpoint_path, device="cpu")
@@ -407,15 +322,6 @@ Examples:
     # 検証（オプション）
     if args.verify:
         verify_onnx(str(output_path))
-    
-    # 一時ファイルのクリーンアップ
-    if args.s3_bucket and checkpoint_path.parent.name == "tmp_weights":
-        print(f"[INFO] Cleaning up temporary file: {checkpoint_path}")
-        checkpoint_path.unlink()
-        try:
-            checkpoint_path.parent.rmdir()
-        except OSError:
-            pass  # ディレクトリが空でない場合は無視
 
 
 if __name__ == '__main__':

@@ -815,6 +815,20 @@ python python/train/train.py --data custom --epochs 10 --weights weights/aida_mo
 
 学習完了後、ONNX形式に変換します。**Dockerコンテナ内で実行することを推奨**します。
 
+#### 事前準備：ptファイルの配置
+
+学習済みの`.pt`ファイルを`assets`ディレクトリに配置してください。
+
+```bash
+# 例: assets/best.pt または assets/model.pt
+# assetsディレクトリが存在しない場合は作成してください
+mkdir -p assets
+# ptファイルを配置
+cp /path/to/your/best.pt assets/best.pt
+```
+
+**注意**: `assets/*.pt`は`.gitignore`に含まれているため、gitにはコミットされません。
+
 #### Docker環境での実行（推奨）
 
 ```bash
@@ -827,52 +841,35 @@ docker compose exec python bash
 # コンテナ内で実行（プロジェクトルートは /app）
 cd /app
 
-# S3からダウンロードしてONNXに変換
+# assetsディレクトリ内のptファイルからONNXに変換
 python python/export_onnx.py \
-  --s3-bucket km62m-ml-storage \
-  --s3-key yolo-dataset/v1/weights/yolov5n_train_20251226_030458/best.pt \
-  --output assets/model.onnx \
+  --checkpoint assets/best.pt \
   --verify
 ```
 
 **注意**: 
-- AWS認証情報は環境変数として設定してください（`docker-compose.yml`が自動的にコンテナに渡します）
-  - PowerShell: `$env:AWS_ACCESS_KEY_ID="..."; $env:AWS_SECRET_ACCESS_KEY="..."; $env:AWS_DEFAULT_REGION="ap-northeast-1"`
-  - 永続化: `setx AWS_ACCESS_KEY_ID "..."` など
 - `--output`を省略すると自動的に`assets/model.onnx`に出力されます
 - プロジェクトルート（`pom.xml`があるディレクトリ）から実行してください
-
-#### ローカルファイルから変換する場合
-
-```bash
-# Dockerコンテナ内で
-python python/export_onnx.py \
-  --checkpoint python/weights/best.pt \
-  --output assets/model.onnx \
-  --verify
-```
 
 #### ローカル環境（Docker外）で実行する場合
 
 ```bash
 # プロジェクトルートから実行
 python python/export_onnx.py \
-  --s3-bucket km62m-ml-storage \
-  --s3-key yolo-dataset/v1/weights/run_xxx/best.pt \
+  --checkpoint assets/best.pt \
   --output assets/model.onnx \
   --verify
 ```
 
 **前提条件**:
 - `ultralytics>=8.0.0`がインストールされていること（Dockerコンテナ内には既にインストール済み）
-- S3からダウンロードする場合はAWS CLIがインストールされていること（Dockerコンテナ内には既にインストール済み）
-- **AWS認証情報は環境変数で設定済みであること**（`docker-compose.yml`が自動的にコンテナに渡します）
+- `assets`ディレクトリに`.pt`ファイルが配置されていること
 
 ### モデルの配置
 
 変換したONNXモデルを `assets/model.onnx` に配置すると、Java側から使用可能になります。
 
-**注意**: `assets/model.onnx`は`.gitignore`に含まれているため、gitにはコミットされません。S3からダウンロードして変換するか、チーム内で共有してください。
+**注意**: `assets/model.onnx`と`assets/*.pt`は`.gitignore`に含まれているため、gitにはコミットされません。チーム内で共有してください。
 
 ---
 
