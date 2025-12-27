@@ -65,3 +65,5 @@ python/.venv
 assets/*.pt
 assets/model.onnx
 assets/*.onnx
+samples/images/*.jpg
+samples/images/*.png

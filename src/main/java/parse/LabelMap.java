@@ -31,7 +31,7 @@ public class LabelMap {
         // map.put("frac_bar", "FRAC_BAR");
         // みたいに内部トークンとして扱える
         
-        // クラスID → クラス名のマッピング（YOLOv5の19クラス）
+        // クラスID → クラス名のマッピング（YOLOv5の18クラス）
         // 順序: 数字0-9, 演算子+,-,*,/,=, 変数x, 括弧(,)
         idToClass = new String[]{
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",  // 0-9: 数字
@@ -39,12 +39,13 @@ public class LabelMap {
             "x",                                                 // 15: 変数
             "(", ")"                                             // 16-17: 括弧
         };
+        // 合計18クラス（0-17）
     }
 
     /**
      * クラスIDからクラス名を取得
      * 
-     * @param classId クラスID（0-18）
+     * @param classId クラスID（0-17）
      * @return クラス名（例: "0", "+", "x"）
      */
     public String getClassLabel(int classId) {

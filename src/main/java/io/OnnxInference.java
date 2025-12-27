@@ -20,7 +20,7 @@ public class OnnxInference implements AutoCloseable {
     private final OrtEnvironment env;
     private final OrtSession session;
     private final int inputSize;  // 640 (YOLOv5標準)
-    private final int numClasses; // 19 (数字10 + 演算子5 + 変数1 + 括弧2 + その他)
+    private final int numClasses; // 18 (実際のモデルのクラス数)
     
     // 後処理パラメータ
     private double confidenceThreshold = 0.15;  // Recall寄り（取りこぼしを減らす）
@@ -45,7 +45,7 @@ public class OnnxInference implements AutoCloseable {
         
         this.session = env.createSession(modelPath, opts);
         this.inputSize = 640;  // YOLOv5標準
-        this.numClasses = 19;  // 19クラス（数字10 + 演算子5 + 変数1 + 括弧2 + その他）
+        this.numClasses = 18;  // 18クラス（実際のモデル出力: 23次元 = 5(bbox+objectness) + 18(クラス)）
         
         // モデル情報を表示
         printModelInfo();
@@ -71,6 +71,38 @@ public class OnnxInference implements AutoCloseable {
     }
     
     /**
+     * リサイズ情報を保持する内部クラス
+     */
+    private static class ResizeInfo {
+        double scale;
+        int offsetX;
+        int offsetY;
+        int srcW;
+        int srcH;
+        
+        ResizeInfo(double scale, int offsetX, int offsetY, int srcW, int srcH) {
+            this.scale = scale;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.srcW = srcW;
+            this.srcH = srcH;
+        }
+    }
+    
+    /**
+     * 前処理結果を保持する内部クラス
+     */
+    private static class PreprocessResult {
+        final float[][][] normalized;
+        final ResizeInfo resizeInfo;
+        
+        PreprocessResult(float[][][] normalized, ResizeInfo resizeInfo) {
+            this.normalized = normalized;
+            this.resizeInfo = resizeInfo;
+        }
+    }
+    
+    /**
      * 画像から検出結果を取得
      * 
      * @param image 入力画像（任意サイズ）
@@ -80,14 +112,14 @@ public class OnnxInference implements AutoCloseable {
      * @throws OrtException ONNX Runtimeのエラー
      */
     public Detection detect(BufferedImage image, int imageW, int imageH) throws OrtException {
-        // 1. 前処理：画像を640x640にリサイズして正規化
-        float[][][] preprocessed = preprocessImage(image);
+        // 1. 前処理：画像を640x640にリサイズして正規化（リサイズ情報も取得）
+        PreprocessResult preprocessResult = preprocessImage(image);
         
         // 2. ONNX推論実行
-        float[][][] rawOutput = runInference(preprocessed);
+        float[][][] rawOutput = runInference(preprocessResult.normalized);
         
-        // 3. 後処理：NMS + スコアフィルタリング
-        List<DetSymbol> detections = postProcess(rawOutput, imageW, imageH);
+        // 3. 後処理：NMS + スコアフィルタリング（リサイズ情報を使用して座標変換）
+        List<DetSymbol> detections = postProcess(rawOutput, imageW, imageH, preprocessResult.resizeInfo);
         
         return new Detection(imageW, imageH, detections);
     }
@@ -96,11 +128,19 @@ public class OnnxInference implements AutoCloseable {
      * 画像の前処理（リサイズ + 正規化）
      * 
      * @param image 入力画像
-     * @return 正規化済み画像データ [3][640][640] (RGB, 0.0-1.0)
+     * @return 前処理結果（正規化済み画像データとリサイズ情報）
      */
-    private float[][][] preprocessImage(BufferedImage image) {
+    private PreprocessResult preprocessImage(BufferedImage image) {
         // 640x640にリサイズ（アスペクト比を保持してパディング）
-        BufferedImage resized = resizeWithPadding(image, inputSize, inputSize);
+        ResizeResult resizeResult = resizeWithPadding(image, inputSize, inputSize);
+        BufferedImage resized = resizeResult.resizedImage;
+        ResizeInfo resizeInfo = new ResizeInfo(
+            resizeResult.scale,
+            resizeResult.offsetX,
+            resizeResult.offsetY,
+            resizeResult.srcW,
+            resizeResult.srcH
+        );
         
         // RGBに変換して正規化（0-255 → 0.0-1.0）
         float[][][] normalized = new float[3][inputSize][inputSize];
@@ -119,7 +159,28 @@ public class OnnxInference implements AutoCloseable {
             }
         }
         
-        return normalized;
+        return new PreprocessResult(normalized, resizeInfo);
+    }
+    
+    /**
+     * リサイズ情報と画像を保持する内部クラス
+     */
+    private static class ResizeResult {
+        final BufferedImage resizedImage;
+        final double scale;
+        final int offsetX;
+        final int offsetY;
+        final int srcW;
+        final int srcH;
+        
+        ResizeResult(BufferedImage img, double scale, int offsetX, int offsetY, int srcW, int srcH) {
+            this.resizedImage = img;
+            this.scale = scale;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.srcW = srcW;
+            this.srcH = srcH;
+        }
     }
     
     /**
@@ -128,9 +189,9 @@ public class OnnxInference implements AutoCloseable {
      * @param image 元画像
      * @param targetW 目標幅
      * @param targetH 目標高さ
-     * @return リサイズ済み画像（白背景でパディング）
+     * @return リサイズ情報とリサイズ済み画像
      */
-    private BufferedImage resizeWithPadding(BufferedImage image, int targetW, int targetH) {
+    private ResizeResult resizeWithPadding(BufferedImage image, int targetW, int targetH) {
         int srcW = image.getWidth();
         int srcH = image.getHeight();
         
@@ -157,7 +218,7 @@ public class OnnxInference implements AutoCloseable {
         g2.drawImage(resized, offsetX, offsetY, null);
         g2.dispose();
         
-        return padded;
+        return new ResizeResult(padded, scale, offsetX, offsetY, srcW, srcH);
     }
     
     /**
@@ -212,9 +273,10 @@ public class OnnxInference implements AutoCloseable {
      * @param rawOutput 生の推論結果 [batch][num_detections][5+num_classes]
      * @param imageW 元画像の幅
      * @param imageH 元画像の高さ
+     * @param resizeInfo リサイズ情報
      * @return 検出シンボルのリスト
      */
-    private List<DetSymbol> postProcess(float[][][] rawOutput, int imageW, int imageH) {
+    private List<DetSymbol> postProcess(float[][][] rawOutput, int imageW, int imageH, ResizeInfo resizeInfo) {
         // rawOutput: [1][num_detections][5+num_classes]
         // 5 = 4 (bbox: cx, cy, w, h) + 1 (objectness)
         float[][] detections = rawOutput[0];  // [num_detections][5+num_classes]
@@ -223,7 +285,7 @@ public class OnnxInference implements AutoCloseable {
         
         // 各検出候補をパース
         for (float[] det : detections) {
-            // bbox: [cx, cy, w, h] (正規化座標 0.0-1.0)
+            // bbox: [cx, cy, w, h] (640x640座標系での正規化座標 0.0-1.0)
             double cx = det[0];
             double cy = det[1];
             double w = det[2];
@@ -244,7 +306,8 @@ public class OnnxInference implements AutoCloseable {
             
             // スコア閾値でフィルタリング
             if (maxScore >= confidenceThreshold && bestClass >= 0) {
-                // 正規化座標 → ピクセル座標に変換
+                // bbox: [cx, cy, w, h] (正規化座標 0.0-1.0)
+                // 正規化座標 → ピクセル座標に変換（シンプルな実装）
                 double x1 = (cx - w / 2.0) * imageW;
                 double y1 = (cy - h / 2.0) * imageH;
                 double x2 = (cx + w / 2.0) * imageW;
