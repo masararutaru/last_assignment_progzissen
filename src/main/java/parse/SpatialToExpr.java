@@ -42,21 +42,22 @@ public class SpatialToExpr {
             }
             
             List<String> parts = new ArrayList<>();
-            if (digits > 0) parts.add(String.format("dropped digits: %d", digits));
-            if (operators > 0) parts.add(String.format("dropped operators: %d", operators));
-            if (funcs > 0) parts.add(String.format("dropped funcs: %d", funcs));
+            if (digits > 0) parts.add(String.format("数字 %d個", digits));
+            if (operators > 0) parts.add(String.format("演算子 %d個", operators));
+            if (funcs > 0) parts.add(String.format("関数 %d個", funcs));
             
             if (parts.isEmpty()) {
                 // その他（括弧など）のみの場合
-                warnings.add(String.format("dropped %d low-score symbol(s) (threshold=%.2f)", 
+                warnings.add(String.format("確率の低いシンボル %d個を除外しました (閾値=%.2f)", 
                         dropped.size(), scoreThreshold));
             } else {
-                warnings.add(String.join(", ", parts) + String.format(" (threshold=%.2f)", scoreThreshold));
+                warnings.add(String.format("確率の低いシンボルを除外: %s (閾値=%.2f)", 
+                        String.join(", ", parts), scoreThreshold));
             }
         }
 
         if (filtered.isEmpty()) {
-            warnings.add("no symbols after filtering");
+            warnings.add("フィルタリング後にシンボルが残りませんでした");
             return new Result("", warnings);
         }
 
@@ -93,7 +94,7 @@ public class SpatialToExpr {
                     
                     // 複数の exponent 候補があった場合の警告
                     if (sup.size() > 1) {
-                        warnings.add(String.format("multiple exponent candidates detected (%d symbols), using all", 
+                        warnings.add(String.format("複数の指数候補が検出されました (%d個のシンボル)、すべて使用します", 
                                 sup.size()));
                     }
                     
@@ -136,7 +137,7 @@ public class SpatialToExpr {
         String expr = String.join("", withMul);
 
         // 6) ちょいデバッグしやすく
-        if (unbalancedParen(expr)) warnings.add("unbalanced parentheses (maybe detection miss)");
+        if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
 
         return new Result(expr, warnings);
     }

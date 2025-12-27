@@ -47,13 +47,21 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         // コントロールパネル（上部）
         controlPanel = new Panel();
         controlPanel.setLayout(new FlowLayout());
+        
+        // ボタンのフォントを大きくしてボタンサイズを拡大
+        Font buttonFont = new Font(Font.SANS_SERIF, Font.BOLD, 16);
+        
         btnClear = new Button("クリア");
+        btnClear.setFont(buttonFont);
         btnClear.addActionListener(this);
         btnInference = new Button("推論");
+        btnInference.setFont(buttonFont);
         btnInference.addActionListener(this);
         btnUndo = new Button("Undo");
+        btnUndo.setFont(buttonFont);
         btnUndo.addActionListener(this);
         checkboxEraser = new Checkbox("消しゴムモード");
+        checkboxEraser.setFont(buttonFont);
         checkboxEraser.addItemListener(e -> {
             drawingCanvas.setEraserMode(checkboxEraser.getState());
         });
@@ -147,7 +155,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         
         try {
             ImageIO.write(canvasImage, "png", imageFile);
-            resultArea.append("画像を保存しました: " + imageFile.getAbsolutePath() + "\n");
+            // 画像保存メッセージは表示しない
         } catch (Exception e) {
             resultArea.append("エラー: 画像の保存に失敗しました: " + e.getMessage() + "\n");
             e.printStackTrace();
