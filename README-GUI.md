@@ -4,8 +4,8 @@
 
 ### 1. プロジェクトをクローン
 ```bash
-git clone <repository-url>
-cd last_assignment
+git clone https://github.com/masararutaru/last_assignment_progzissen.git
+cd last_assignment_progzissen
 ```
 
 ### 2. 重みファイルを配置
