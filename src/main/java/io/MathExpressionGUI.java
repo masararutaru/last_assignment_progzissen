@@ -23,6 +23,8 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     // GUIコンポーネント
     private Button btnClear;
     private Button btnInference;
+    private Button btnUndo;
+    private Checkbox checkboxEraser;
     private Panel controlPanel;
     private DrawingCanvas drawingCanvas;
     private TextArea resultArea;
@@ -37,7 +39,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     
     public MathExpressionGUI() {
         super("数式認識アプリケーション");
-        this.setSize(1200, 800);
+        this.setSize(1600, 900);
         
         // レイアウト設定
         this.setLayout(new BorderLayout(10, 10));
@@ -49,8 +51,16 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         btnClear.addActionListener(this);
         btnInference = new Button("推論");
         btnInference.addActionListener(this);
+        btnUndo = new Button("Undo");
+        btnUndo.addActionListener(this);
+        checkboxEraser = new Checkbox("消しゴムモード");
+        checkboxEraser.addItemListener(e -> {
+            drawingCanvas.setEraserMode(checkboxEraser.getState());
+        });
         controlPanel.add(btnClear);
         controlPanel.add(btnInference);
+        controlPanel.add(btnUndo);
+        controlPanel.add(checkboxEraser);
         this.add(controlPanel, BorderLayout.NORTH);
         
         // 描画用Canvas（中央）
@@ -58,7 +68,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         this.add(drawingCanvas, BorderLayout.CENTER);
         
         // 結果表示エリア（右側）
-        resultArea = new TextArea("", 20, 50, TextArea.SCROLLBARS_VERTICAL_ONLY);
+        resultArea = new TextArea("", 30, 80, TextArea.SCROLLBARS_VERTICAL_ONLY);
         resultArea.setEditable(false);
         resultArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         resultScrollPane = new ScrollPane();
@@ -101,6 +111,8 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             drawingCanvas.clearCanvas();
         } else if (e.getSource() == btnInference) {
             performInference();
+        } else if (e.getSource() == btnUndo) {
+            drawingCanvas.undo();
         }
     }
     
@@ -182,10 +194,14 @@ public class MathExpressionGUI extends Frame implements ActionListener {
                     resultArea.append("（AST構築完了）\n\n");
                     
                     // 4. 計算結果（x=1.0で評価）
+                    // 式にxが含まれているかチェック
+                    boolean hasX = inferredExpr.contains("x");
                     double x = 1.0;
                     double value = expr.eval(x);
                     resultArea.append("【計算結果】\n");
-                    resultArea.append("x = " + x + " のとき\n");
+                    if (hasX) {
+                        resultArea.append("x = " + x + " のとき\n");
+                    }
                     resultArea.append("値 = " + value + "\n\n");
                     
                 } catch (Exception parseEx) {
@@ -215,12 +231,48 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         private Image img = null;
         private Graphics2D gc = null;
         private Dimension d;
+        private boolean eraserMode = false;
+        private java.util.Stack<Image> undoStack = new java.util.Stack<>();
+        private static final int MAX_UNDO = 10;
         
         public DrawingCanvas() {
-            this.setSize(800, 600);
+            this.setSize(1000, 700);
             this.setBackground(Color.WHITE);
             addMouseListener(this);
             addMouseMotionListener(this);
+        }
+        
+        public void setEraserMode(boolean enabled) {
+            this.eraserMode = enabled;
+        }
+        
+        public void undo() {
+            if (!undoStack.isEmpty()) {
+                img = undoStack.pop();
+                if (img != null) {
+                    gc = (Graphics2D) img.getGraphics();
+                    gc.setColor(eraserMode ? Color.WHITE : Color.BLACK);
+                }
+                repaint();
+            }
+        }
+        
+        private void saveState() {
+            if (img != null) {
+                // 現在の状態をコピーして保存
+                BufferedImage copy = new BufferedImage(img.getWidth(this), img.getHeight(this), BufferedImage.TYPE_INT_RGB);
+                Graphics2D g2d = copy.createGraphics();
+                g2d.setColor(Color.WHITE);
+                g2d.fillRect(0, 0, copy.getWidth(), copy.getHeight());
+                g2d.drawImage(img, 0, 0, this);
+                g2d.dispose();
+                
+                undoStack.push(copy);
+                // 最大数を超えたら古いものを削除
+                while (undoStack.size() > MAX_UNDO) {
+                    undoStack.remove(0);
+                }
+            }
         }
         
         /**
@@ -298,6 +350,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         public void mousePressed(MouseEvent e) {
             x = e.getX();
             y = e.getY();
+            saveState();
         }
         
         @Override
@@ -316,12 +369,16 @@ public class MathExpressionGUI extends Frame implements ActionListener {
                     gc.setColor(Color.BLACK);
                 } else {
                     gc = (Graphics2D) img.getGraphics();
-                    gc.setColor(Color.BLACK);
+                    gc.setColor(eraserMode ? Color.WHITE : Color.BLACK);
                 }
             }
             
-            // 線の太さを設定
-            gc.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            // 消しゴムモードの場合は白で、通常モードの場合は黒で描画
+            gc.setColor(eraserMode ? Color.WHITE : Color.BLACK);
+            
+            // 線の太さを設定（消しゴムモードの場合は少し太めに）
+            float strokeWidth = eraserMode ? 15.0f : 3.0f;
+            gc.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             
             px = x;
             py = y;

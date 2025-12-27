@@ -67,7 +67,9 @@ public class SpatialToExpr {
         s.sort(Comparator.comparingDouble(a -> a.box.cx()));
 
         // 3) トークン列にしつつ、べき(右上)をまとめる
+        // トークンとDetSymbolの対応を保持（数字の連続判定のため）
         List<String> tokens = new ArrayList<>();
+        List<DetSymbol> tokenSymbols = new ArrayList<>(); // 各トークンに対応するDetSymbol（null可）
         int i = 0;
         while (i < s.size()) {
             DetSymbol cur = s.get(i);
@@ -75,6 +77,7 @@ public class SpatialToExpr {
             // 関数は "sin" 等のトークンが来る想定： sin (...) の形にする
             // （モデルが 's','i','n' 分割なら、ここで連結ルール追加が必要）
             tokens.add(cur.token);
+            tokenSymbols.add(cur);
 
             // exponent判定：次が "右上に小さい塊" なら ^( ... ) を挿入
             if (i + 1 < s.size()) {
@@ -98,9 +101,13 @@ public class SpatialToExpr {
                     String supStr = sup.stream().map(x -> x.token).collect(Collectors.joining());
 
                     tokens.add("^");
+                    tokenSymbols.add(null);
                     tokens.add("(");
+                    tokenSymbols.add(null);
                     tokens.add(supStr);
+                    tokenSymbols.add(null); // 複数シンボルの合成なのでnull
                     tokens.add(")");
+                    tokenSymbols.add(null);
 
                     i = j;
                     continue;
@@ -117,7 +124,9 @@ public class SpatialToExpr {
             withMul.add(a);
             if (k + 1 < tokens.size()) {
                 String b = tokens.get(k + 1);
-                if (needImplicitMul(a, b)) {
+                DetSymbol symA = tokenSymbols.get(k);
+                DetSymbol symB = tokenSymbols.get(k + 1);
+                if (needImplicitMul(a, b, symA, symB)) {
                     withMul.add("*");
                 }
             }
@@ -175,7 +184,7 @@ public class SpatialToExpr {
         return t.equals("+") || t.equals("-") || t.equals("*") || t.equals("/") || t.equals("^");
     }
 
-    private boolean needImplicitMul(String a, String b) {
+    private boolean needImplicitMul(String a, String b, DetSymbol symA, DetSymbol symB) {
         // 明示演算子の前後は不要
         if (a.equals("+") || a.equals("-") || a.equals("*") || a.equals("/") || a.equals("^")) return false;
         if (b.equals("+") || b.equals("-") || b.equals("*") || b.equals("/") || b.equals("^")) return false;
@@ -183,6 +192,19 @@ public class SpatialToExpr {
         // 例: "sin" "(" は掛け算じゃない（関数呼び出し）
         if (isFunc(a) && b.equals("(")) return false;
         if (a.equals("sqrt") && b.equals("(")) return false;
+
+        // 数字同士の場合：連続している（近い位置にある）場合は掛け算を挿入しない
+        if (isNumberLike(a) && isNumberLike(b)) {
+            if (symA != null && symB != null) {
+                // 2つの数字が近い位置にあるかチェック
+                double distance = symB.box.x1 - symA.box.x2; // 右端から左端までの距離
+                double avgWidth = (symA.box.w() + symB.box.w()) / 2.0;
+                // 平均幅の0.5倍以内なら連続していると判断
+                if (distance <= avgWidth * 0.5) {
+                    return false; // 連続しているので掛け算を挿入しない
+                }
+            }
+        }
 
         // 例: ")" "(" → * を入れる
         return isAtomEnd(a) && isAtomStart(b);
