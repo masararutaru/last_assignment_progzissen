@@ -8,6 +8,18 @@ services:
     volumes:
       - .:/app
       - m2:/root/.m2
+    # Linux/Macの場合：X11ソケットをマウント（コメントアウトを外す）
+    # Windowsの場合：VNCサーバーを使用（下記のportsとenvironmentを有効化）
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+    # Windows用VNC設定（Linux/Macでは不要）
+    # ports:
+    #   - "5900:5900"
+    # environment:
+    #   - DISPLAY=:99
+    # command: ["bash", "-lc", "Xvfb :99 -screen 0 1024x768x24 & sleep 2 && x11vnc -display :99 -nopw -listen 0.0.0.0 -xkb -ncache 10 -ncache_cr -forever & sleep infinity"]
     command: ["bash", "-lc", "sleep infinity"]
 
   # Python/PyTorch環境（学習・ONNX変換用）
