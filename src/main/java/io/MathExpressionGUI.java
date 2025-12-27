@@ -68,11 +68,13 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         this.add(drawingCanvas, BorderLayout.CENTER);
         
         // 結果表示エリア（右側）- 大きく、フォントも大きく
-        resultArea = new TextArea("", 40, 120, TextArea.SCROLLBARS_VERTICAL_ONLY);
+        resultArea = new TextArea("", 50, 150, TextArea.SCROLLBARS_VERTICAL_ONLY);
         resultArea.setEditable(false);
         resultArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 18));
         resultScrollPane = new ScrollPane();
         resultScrollPane.add(resultArea);
+        // 推論結果エリアをより大きく表示するため、幅を指定
+        resultScrollPane.setPreferredSize(new Dimension(800, 0));
         this.add(resultScrollPane, BorderLayout.EAST);
         
         // ウィンドウクローズ処理
@@ -258,7 +260,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         private static final int MAX_UNDO = 10;
         
         public DrawingCanvas() {
-            this.setSize(1200, 800);
+            this.setSize(1000, 700);
             this.setBackground(Color.WHITE);
             addMouseListener(this);
             addMouseMotionListener(this);
