@@ -39,7 +39,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     
     public MathExpressionGUI() {
         super("数式認識アプリケーション");
-        this.setSize(1600, 900);
+        this.setSize(2000, 1100);
         
         // レイアウト設定
         this.setLayout(new BorderLayout(10, 10));
@@ -67,10 +67,10 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         drawingCanvas = new DrawingCanvas();
         this.add(drawingCanvas, BorderLayout.CENTER);
         
-        // 結果表示エリア（右側）
-        resultArea = new TextArea("", 30, 80, TextArea.SCROLLBARS_VERTICAL_ONLY);
+        // 結果表示エリア（右側）- 大きく、フォントも大きく
+        resultArea = new TextArea("", 40, 120, TextArea.SCROLLBARS_VERTICAL_ONLY);
         resultArea.setEditable(false);
-        resultArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        resultArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 18));
         resultScrollPane = new ScrollPane();
         resultScrollPane.add(resultArea);
         this.add(resultScrollPane, BorderLayout.EAST);
@@ -152,7 +152,11 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             return;
         }
         
-        resultArea.append("=== 推論開始 ===\n");
+        resultArea.append("\n");
+        resultArea.append("═══════════════════════════════════════════════════\n");
+        resultArea.append("                   推論開始\n");
+        resultArea.append("═══════════════════════════════════════════════════\n");
+        resultArea.append("\n");
         
         try {
             int imageW = canvasImage.getWidth();
@@ -168,12 +172,14 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             SpatialToExpr.Result spatialResult = spatialToExpr.buildExprString(detection);
             
             String inferredExpr = spatialResult.expr;
+            resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
             resultArea.append("【式推論した式】\n");
+            resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
             resultArea.append(inferredExpr + "\n\n");
             
             // 警告があれば表示
             if (!spatialResult.warnings.isEmpty()) {
-                resultArea.append("警告:\n");
+                resultArea.append("⚠ 警告:\n");
                 for (String warn : spatialResult.warnings) {
                     resultArea.append("  - " + warn + "\n");
                 }
@@ -182,39 +188,55 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             
             // 3. 式をパース（認識した式）
             if (inferredExpr.isEmpty()) {
+                resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                 resultArea.append("【認識した式】\n");
+                resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                 resultArea.append("（式が空です）\n\n");
+                resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                 resultArea.append("【計算結果】\n");
+                resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                 resultArea.append("（計算できません）\n\n");
             } else {
                 try {
                     Expr expr = Parser.parse(inferredExpr);
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【認識した式】\n");
-                    resultArea.append("パース成功: " + inferredExpr + "\n");
-                    resultArea.append("（AST構築完了）\n\n");
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+                    resultArea.append("✓ パース成功\n");
+                    resultArea.append("式: " + inferredExpr + "\n\n");
                     
                     // 4. 計算結果（x=1.0で評価）
                     // 式にxが含まれているかチェック
                     boolean hasX = inferredExpr.contains("x");
                     double x = 1.0;
                     double value = expr.eval(x);
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【計算結果】\n");
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     if (hasX) {
                         resultArea.append("x = " + x + " のとき\n");
                     }
-                    resultArea.append("値 = " + value + "\n\n");
+                    resultArea.append("\n");
+                    resultArea.append("答え = " + value + "\n\n");
                     
                 } catch (Exception parseEx) {
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【認識した式】\n");
-                    resultArea.append("パースエラー: " + parseEx.getMessage() + "\n");
-                    resultArea.append("（式: " + inferredExpr + "）\n\n");
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+                    resultArea.append("✗ パースエラー: " + parseEx.getMessage() + "\n");
+                    resultArea.append("式: " + inferredExpr + "\n\n");
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【計算結果】\n");
+                    resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("（計算できません）\n\n");
                     parseEx.printStackTrace();
                 }
             }
             
-            resultArea.append("=== 推論完了 ===\n\n");
+            resultArea.append("═══════════════════════════════════════════════════\n");
+            resultArea.append("                   推論完了\n");
+            resultArea.append("═══════════════════════════════════════════════════\n");
+            resultArea.append("\n");
             
         } catch (Exception e) {
             resultArea.append("エラー: " + e.getMessage() + "\n");
@@ -236,7 +258,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         private static final int MAX_UNDO = 10;
         
         public DrawingCanvas() {
-            this.setSize(1000, 700);
+            this.setSize(1200, 800);
             this.setBackground(Color.WHITE);
             addMouseListener(this);
             addMouseMotionListener(this);
