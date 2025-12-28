@@ -20,7 +20,7 @@ public class OnnxInference implements AutoCloseable {
     private final OrtEnvironment env;
     private final OrtSession session;
     private final int inputSize;  // 640 (YOLOv5標準)
-    private final int numClasses; // 19 (実際のモデルのクラス数: 0-9, +, -, *, /, =, x, (, ))
+    private int numClasses; // モデルの出力次元から動的に決定
     
     // 後処理パラメータ
     private double confidenceThreshold = 0.15;  // Recall寄り（取りこぼしを減らす）
@@ -45,10 +45,32 @@ public class OnnxInference implements AutoCloseable {
         
         this.session = env.createSession(modelPath, opts);
         this.inputSize = 640;  // YOLOv5標準
-        this.numClasses = 19;  // 19クラス（実際のモデル出力: 24次元 = 5(bbox+objectness) + 19(クラス)）
         
-        // モデル情報を表示
+        // モデル情報を表示してからクラス数を決定
         printModelInfo();
+        
+        // モデルの出力次元からクラス数を動的に取得
+        try {
+            NodeInfo outputInfo = session.getOutputInfo().values().iterator().next();
+            TensorInfo tensorInfo = (TensorInfo) outputInfo.getInfo();
+            long[] outputShape = tensorInfo.getShape();
+            
+            // 出力形状: [1, num_detections, 5+num_classes]
+            // 最後の次元からクラス数を計算: 5(bbox+objectness) + num_classes
+            if (outputShape.length >= 3) {
+                int outputDim = (int) outputShape[outputShape.length - 1];
+                this.numClasses = outputDim - 5;  // 5 = 4(bbox) + 1(objectness)
+                System.out.println("[ONNX] 検出されたクラス数: " + this.numClasses + " (出力次元: " + outputDim + ")");
+            } else {
+                // フォールバック: デフォルトで18クラス
+                this.numClasses = 18;
+                System.out.println("[ONNX] 警告: 出力形状からクラス数を取得できませんでした。デフォルト値18を使用します。");
+            }
+        } catch (Exception e) {
+            // エラー時はデフォルトで18クラス
+            this.numClasses = 18;
+            System.err.println("[ONNX] 警告: モデル情報の取得に失敗しました。デフォルト値18を使用します: " + e.getMessage());
+        }
     }
     
     /**
@@ -293,10 +315,19 @@ public class OnnxInference implements AutoCloseable {
             double objectness = det[4];
             
             // クラス確率を取得
+            // 実際の出力次元を確認（配列の長さから）
+            int actualOutputDim = det.length;
+            int actualNumClasses = actualOutputDim - 5;  // 5 = 4(bbox) + 1(objectness)
+            int classesToCheck = Math.min(numClasses, actualNumClasses);  // 安全のため小さい方を使用
+            
             double maxScore = 0.0;
             int bestClass = -1;
-            for (int c = 0; c < numClasses; c++) {
-                double classScore = det[5 + c];
+            for (int c = 0; c < classesToCheck; c++) {
+                int idx = 5 + c;
+                if (idx >= det.length) {
+                    break;  // 配列の範囲外を防ぐ
+                }
+                double classScore = det[idx];
                 double totalScore = objectness * classScore;
                 if (totalScore > maxScore) {
                     maxScore = totalScore;
