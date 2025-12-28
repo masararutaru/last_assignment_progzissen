@@ -175,7 +175,27 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             // 1. ONNX推論を実行
             resultArea.append("推論を実行中...\n");
             Detection detection = inference.detect(canvasImage, imageW, imageH);
-            resultArea.append("検出シンボル数: " + detection.symbols.size() + "\n\n");
+            resultArea.append("検出シンボル数: " + detection.symbols.size() + "\n");
+            
+            // デバッグ情報: 検出されたシンボルとスコアを表示
+            if (detection.symbols.size() > 0) {
+                double minScore = detection.symbols.stream().mapToDouble(s -> s.score).min().orElse(0.0);
+                double maxScore = detection.symbols.stream().mapToDouble(s -> s.score).max().orElse(0.0);
+                double avgScore = detection.symbols.stream().mapToDouble(s -> s.score).average().orElse(0.0);
+                resultArea.append(String.format("スコア範囲: %.3f - %.3f (平均: %.3f)\n", minScore, maxScore, avgScore));
+                
+                // 最初の10個のシンボルを表示
+                int showCount = Math.min(10, detection.symbols.size());
+                resultArea.append("検出されたシンボル（最初の" + showCount + "個）:\n");
+                for (int i = 0; i < showCount; i++) {
+                    DetSymbol sym = detection.symbols.get(i);
+                    resultArea.append(String.format("  %d: %s (スコア=%.3f)\n", i + 1, sym.token, sym.score));
+                }
+                if (detection.symbols.size() > showCount) {
+                    resultArea.append("  ... 他 " + (detection.symbols.size() - showCount) + " 個\n");
+                }
+            }
+            resultArea.append("\n");
             
             // 2. SpatialToExprで式文字列に変換（推論した式）
             SpatialToExpr spatialToExpr = new SpatialToExpr();

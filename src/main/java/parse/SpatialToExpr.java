@@ -18,10 +18,17 @@ public class SpatialToExpr {
         List<String> warnings = new ArrayList<>();
 
         // 1) スコア低いのを落とす（閾値は適宜）
-        double scoreThreshold = 0.20;
+        // OnnxInferenceで既に0.15でフィルタリングされているため、ここではより低い閾値を使用
+        double scoreThreshold = 0.10;  // 0.20から0.10に下げる
         List<DetSymbol> filtered = det.symbols.stream()
                 .filter(x -> x.score >= scoreThreshold)
                 .collect(Collectors.toList());
+        
+        // デバッグ情報: 検出されたシンボルとスコアを表示
+        if (det.symbols.isEmpty()) {
+            warnings.add("検出されたシンボルがありません");
+            return new Result("", warnings);
+        }
         
         // 低スコアを捨てた場合の警告（種類別にカウント）
         List<DetSymbol> dropped = det.symbols.stream()
@@ -57,7 +64,16 @@ public class SpatialToExpr {
         }
 
         if (filtered.isEmpty()) {
-            warnings.add("フィルタリング後にシンボルが残りませんでした");
+            // デバッグ情報: 実際のスコアを表示
+            if (!det.symbols.isEmpty()) {
+                double minScore = det.symbols.stream().mapToDouble(s -> s.score).min().orElse(0.0);
+                double maxScore = det.symbols.stream().mapToDouble(s -> s.score).max().orElse(0.0);
+                double avgScore = det.symbols.stream().mapToDouble(s -> s.score).average().orElse(0.0);
+                warnings.add(String.format("フィルタリング後にシンボルが残りませんでした (検出数=%d, スコア範囲=%.3f-%.3f, 平均=%.3f, 閾値=%.2f)", 
+                        det.symbols.size(), minScore, maxScore, avgScore, scoreThreshold));
+            } else {
+                warnings.add("フィルタリング後にシンボルが残りませんでした");
+            }
             return new Result("", warnings);
         }
 
