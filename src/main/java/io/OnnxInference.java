@@ -27,6 +27,34 @@ public class OnnxInference implements AutoCloseable {
     private double nmsIouThreshold = 0.45;
     
     /**
+     * クラスごとのスコア補正係数（検出しにくいクラスを補助）
+     * クラスID 1 = "1", クラスID 17 = ")"
+     */
+    private double getClassScoreBoost(int classId) {
+        if (classId == 1) {  // "1"
+            return 1.3;  // 1のスコアを30%増やす
+        }
+        if (classId == 17) {  // ")"
+            return 1.5;  // )のスコアを50%増やす
+        }
+        return 1.0;  // その他は補正なし
+    }
+    
+    /**
+     * クラスごとの閾値（検出しにくいクラスは閾値を下げる）
+     * クラスID 1 = "1", クラスID 17 = ")"
+     */
+    private double getClassThreshold(int classId) {
+        if (classId == 1) {  // "1"
+            return confidenceThreshold * 0.7;  // 1の閾値を30%下げる
+        }
+        if (classId == 17) {  // ")"
+            return confidenceThreshold * 0.6;  // )の閾値を40%下げる
+        }
+        return confidenceThreshold;  // その他は通常の閾値
+    }
+    
+    /**
      * ONNXモデルを読み込む
      * 
      * @param modelPath ONNXモデルファイルのパス（例: "assets/model.onnx"）
@@ -353,27 +381,59 @@ public class OnnxInference implements AutoCloseable {
             
             double maxScore = 0.0;
             int bestClass = -1;
+            double secondBestScore = 0.0;
+            int secondBestClass = -1;
+            
             for (int c = 0; c < classesToCheck; c++) {
                 int idx = 5 + c;
                 if (idx >= det.length) {
                     break;  // 配列の範囲外を防ぐ
                 }
                 double classScore = det[idx];
-                double totalScore = objectness * classScore;
-                if (totalScore > maxScore) {
-                    maxScore = totalScore;
+                
+                // スコア計算: objectness * classScore に加えて、クラスごとの補正を適用
+                double baseScore = objectness * classScore;
+                double boostedScore = baseScore * getClassScoreBoost(c);
+                
+                // 上位2つのクラスを記録（)と(の誤認識を防ぐため）
+                if (boostedScore > maxScore) {
+                    secondBestScore = maxScore;
+                    secondBestClass = bestClass;
+                    maxScore = boostedScore;
                     bestClass = c;
+                } else if (boostedScore > secondBestScore) {
+                    secondBestScore = boostedScore;
+                    secondBestClass = c;
+                }
+            }
+            
+            // )が(に誤認識されるのを防ぐ: )のスコアが(のスコアに近い場合、)を優先
+            if (bestClass == 16 && secondBestClass == 17) {  // (が最良、)が2位
+                double ratio = maxScore / (secondBestScore + 0.0001);  // 0除算防止
+                if (ratio < 1.3) {  // スコア差が30%未満なら)を優先
+                    // )を優先
+                    int temp = bestClass;
+                    bestClass = secondBestClass;
+                    secondBestClass = temp;
+                    double tempScore = maxScore;
+                    maxScore = secondBestScore;
+                    secondBestScore = tempScore;
+                    if (i < 5) {
+                        System.out.println(String.format("    [補正] )を優先 (スコア比=%.2f)", ratio));
+                    }
                 }
             }
             
             // デバッグ: 最初の5個の候補のスコア情報を表示
             if (i < 5) {
-                System.out.println(String.format("    bestClass=%d maxScore=%.3f (閾値=%.3f)", 
-                    bestClass, maxScore, confidenceThreshold));
+                System.out.println(String.format("    bestClass=%d maxScore=%.3f (2位: class=%d score=%.3f, 閾値=%.3f)", 
+                    bestClass, maxScore, secondBestClass, secondBestScore, 
+                    bestClass >= 0 ? getClassThreshold(bestClass) : confidenceThreshold));
             }
             
-            // スコア閾値でフィルタリング
-            if (maxScore >= confidenceThreshold && bestClass >= 0) {
+            // スコア閾値でフィルタリング（クラスごとの閾値を使用）
+            double classThreshold = bestClass >= 0 ? getClassThreshold(bestClass) : confidenceThreshold;
+            if (maxScore >= classThreshold && bestClass >= 0) {
                 candidateCount++;
                 // bbox: [cx, cy, w, h] 
                 // モデルの出力形式を確認: cx=6.050などは既にピクセル座標（640x640）として返されている可能性がある
