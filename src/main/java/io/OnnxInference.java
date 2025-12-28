@@ -23,7 +23,7 @@ public class OnnxInference implements AutoCloseable {
     private int numClasses; // モデルの出力次元から動的に決定
     
     // 後処理パラメータ
-    private double confidenceThreshold = 0.15;  // Recall寄り（取りこぼしを減らす）
+    private double confidenceThreshold = 0.05;  // 一時的に低く設定してデバッグ（元: 0.15）
     private double nmsIouThreshold = 0.45;
     
     /**
@@ -279,6 +279,12 @@ public class OnnxInference implements AutoCloseable {
             OnnxValue outputValue = outputs.get(0);
             float[][][] result = (float[][][]) outputValue.getValue();
             
+            // デバッグ情報
+            System.out.println("[DEBUG] 推論結果:");
+            System.out.println("  出力形状: [" + result.length + "][" + 
+                              (result.length > 0 ? result[0].length : 0) + "][" + 
+                              (result.length > 0 && result[0].length > 0 ? result[0][0].length : 0) + "]");
+            
             return result;
             
         } finally {
@@ -303,16 +309,40 @@ public class OnnxInference implements AutoCloseable {
         // 5 = 4 (bbox: cx, cy, w, h) + 1 (objectness)
         float[][] detections = rawOutput[0];  // [num_detections][5+num_classes]
         
+        // デバッグ情報
+        System.out.println("[DEBUG] postProcess開始");
+        System.out.println("  rawOutput形状: [" + rawOutput.length + "][" + 
+                          (rawOutput.length > 0 ? rawOutput[0].length : 0) + "][" + 
+                          (rawOutput.length > 0 && rawOutput[0].length > 0 ? rawOutput[0][0].length : 0) + "]");
+        System.out.println("  検出候補数: " + detections.length);
+        if (detections.length > 0) {
+            System.out.println("  各候補の次元: " + detections[0].length);
+        }
+        System.out.println("  元画像サイズ: " + imageW + "x" + imageH);
+        System.out.println("  リサイズ情報: scale=" + resizeInfo.scale + ", offsetX=" + resizeInfo.offsetX + ", offsetY=" + resizeInfo.offsetY);
+        
         List<DetectionCandidate> candidates = new ArrayList<>();
         
         // 各検出候補をパース
-        for (float[] det : detections) {
+        int candidateCount = 0;
+        int filteredByScore = 0;
+        int filteredByBbox = 0;
+        
+        for (int i = 0; i < detections.length; i++) {
+            float[] det = detections[i];
+            
             // bbox: [cx, cy, w, h] (640x640座標系での正規化座標 0.0-1.0)
             double cx = det[0];
             double cy = det[1];
             double w = det[2];
             double h = det[3];
             double objectness = det[4];
+            
+            // デバッグ: 最初の5個の候補の情報を表示
+            if (i < 5) {
+                System.out.println(String.format("  [候補%d] cx=%.3f cy=%.3f w=%.3f h=%.3f objectness=%.3f", 
+                    i, cx, cy, w, h, objectness));
+            }
             
             // クラス確率を取得
             // 実際の出力次元を確認（配列の長さから）
@@ -335,8 +365,15 @@ public class OnnxInference implements AutoCloseable {
                 }
             }
             
+            // デバッグ: 最初の5個の候補のスコア情報を表示
+            if (i < 5) {
+                System.out.println(String.format("    bestClass=%d maxScore=%.3f (閾値=%.3f)", 
+                    bestClass, maxScore, confidenceThreshold));
+            }
+            
             // スコア閾値でフィルタリング
             if (maxScore >= confidenceThreshold && bestClass >= 0) {
+                candidateCount++;
                 // bbox: [cx, cy, w, h] (640x640座標系での正規化座標 0.0-1.0)
                 // 1. 640x640座標系でのピクセル座標に変換
                 double cx_pixel = cx * inputSize;
@@ -367,22 +404,40 @@ public class OnnxInference implements AutoCloseable {
                 if (x2 > x1 && y2 > y1) {
                     BBox bbox = new BBox(x1, y1, x2, y2);
                     candidates.add(new DetectionCandidate(bestClass, maxScore, bbox));
+                } else {
+                    filteredByBbox++;
+                    if (i < 5) {
+                        System.out.println(String.format("    bbox無効: x1=%.1f y1=%.1f x2=%.1f y2=%.1f", x1, y1, x2, y2));
+                    }
                 }
+            } else {
+                filteredByScore++;
             }
         }
         
+        // デバッグ情報を表示
+        System.out.println("[DEBUG] 後処理結果:");
+        System.out.println("  スコア閾値通過: " + candidateCount);
+        System.out.println("  スコア閾値で除外: " + filteredByScore);
+        System.out.println("  bbox無効で除外: " + filteredByBbox);
+        System.out.println("  NMS前の候補数: " + candidates.size());
+        
         // NMS実行
         List<DetectionCandidate> nmsResult = nonMaxSuppression(candidates, nmsIouThreshold);
+        System.out.println("  NMS後の候補数: " + nmsResult.size());
         
         // DetSymbolに変換（LabelMapを使用してクラスID → トークン変換）
         LabelMap labelMap = new LabelMap();
-        return nmsResult.stream()
+        List<DetSymbol> result = nmsResult.stream()
             .map(cand -> {
                 String cls = labelMap.getClassLabel(cand.classId);
                 String token = labelMap.getToken(cls);
                 return new DetSymbol(cls, token, cand.score, cand.bbox);
             })
             .collect(Collectors.toList());
+        
+        System.out.println("[DEBUG] 最終検出数: " + result.size());
+        return result;
     }
     
     /**
