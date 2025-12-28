@@ -340,8 +340,9 @@ public class OnnxInference implements AutoCloseable {
             
             // デバッグ: 最初の5個の候補の情報を表示
             if (i < 5) {
-                System.out.println(String.format("  [候補%d] cx=%.3f cy=%.3f w=%.3f h=%.3f objectness=%.3f", 
-                    i, cx, cy, w, h, objectness));
+                System.out.println(String.format("  [候補%d] cx=%.3f cy=%.3f w=%.3f h=%.3f objectness=%.3f (形式判定: %s)", 
+                    i, cx, cy, w, h, objectness, 
+                    (cx > 1.0 || cy > 1.0 || w > 1.0 || h > 1.0) ? "ピクセル座標" : "正規化座標"));
             }
             
             // クラス確率を取得
@@ -374,12 +375,24 @@ public class OnnxInference implements AutoCloseable {
             // スコア閾値でフィルタリング
             if (maxScore >= confidenceThreshold && bestClass >= 0) {
                 candidateCount++;
-                // bbox: [cx, cy, w, h] (640x640座標系での正規化座標 0.0-1.0)
-                // 1. 640x640座標系でのピクセル座標に変換
-                double cx_pixel = cx * inputSize;
-                double cy_pixel = cy * inputSize;
-                double w_pixel = w * inputSize;
-                double h_pixel = h * inputSize;
+                // bbox: [cx, cy, w, h] 
+                // モデルの出力形式を確認: cx=6.050などは既にピクセル座標（640x640）として返されている可能性がある
+                // 正規化座標（0.0-1.0）かピクセル座標かを判定
+                // cxが640を超えていれば既にピクセル座標、1.0以下なら正規化座標
+                double cx_pixel, cy_pixel, w_pixel, h_pixel;
+                if (cx > 1.0 || cy > 1.0 || w > 1.0 || h > 1.0) {
+                    // 既にピクセル座標（640x640座標系）
+                    cx_pixel = cx;
+                    cy_pixel = cy;
+                    w_pixel = w;
+                    h_pixel = h;
+                } else {
+                    // 正規化座標（0.0-1.0）→ ピクセル座標に変換
+                    cx_pixel = cx * inputSize;
+                    cy_pixel = cy * inputSize;
+                    w_pixel = w * inputSize;
+                    h_pixel = h * inputSize;
+                }
                 
                 // 2. パディングを考慮して元画像サイズに変換
                 // パディング領域を除外
@@ -401,13 +414,17 @@ public class OnnxInference implements AutoCloseable {
                 y2 = Math.max(0.0, Math.min(imageH, y2));
                 
                 // 5. 有効なbboxかチェック
-                if (x2 > x1 && y2 > y1) {
+                if (x2 > x1 && y2 > y1 && w_unpadded > 0 && h_unpadded > 0) {
                     BBox bbox = new BBox(x1, y1, x2, y2);
                     candidates.add(new DetectionCandidate(bestClass, maxScore, bbox));
+                    if (i < 5) {
+                        System.out.println(String.format("    ✓ bbox有効: x1=%.1f y1=%.1f x2=%.1f y2=%.1f", x1, y1, x2, y2));
+                    }
                 } else {
                     filteredByBbox++;
                     if (i < 5) {
-                        System.out.println(String.format("    bbox無効: x1=%.1f y1=%.1f x2=%.1f y2=%.1f", x1, y1, x2, y2));
+                        System.out.println(String.format("    ✗ bbox無効: x1=%.1f y1=%.1f x2=%.1f y2=%.1f (w=%.1f h=%.1f)", 
+                            x1, y1, x2, y2, w_unpadded, h_unpadded));
                     }
                 }
             } else {
