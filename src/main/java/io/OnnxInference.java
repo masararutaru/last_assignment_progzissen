@@ -20,7 +20,7 @@ public class OnnxInference implements AutoCloseable {
     private final OrtEnvironment env;
     private final OrtSession session;
     private final int inputSize;  // 640 (YOLOv5標準)
-    private final int numClasses; // 18 (実際のモデルのクラス数)
+    private final int numClasses; // 19 (実際のモデルのクラス数: 0-9, +, -, *, /, =, x, (, ))
     
     // 後処理パラメータ
     private double confidenceThreshold = 0.15;  // Recall寄り（取りこぼしを減らす）
@@ -45,7 +45,7 @@ public class OnnxInference implements AutoCloseable {
         
         this.session = env.createSession(modelPath, opts);
         this.inputSize = 640;  // YOLOv5標準
-        this.numClasses = 18;  // 18クラス（実際のモデル出力: 23次元 = 5(bbox+objectness) + 18(クラス)）
+        this.numClasses = 19;  // 19クラス（実際のモデル出力: 24次元 = 5(bbox+objectness) + 19(クラス)）
         
         // モデル情報を表示
         printModelInfo();
@@ -306,15 +306,37 @@ public class OnnxInference implements AutoCloseable {
             
             // スコア閾値でフィルタリング
             if (maxScore >= confidenceThreshold && bestClass >= 0) {
-                // bbox: [cx, cy, w, h] (正規化座標 0.0-1.0)
-                // 正規化座標 → ピクセル座標に変換（シンプルな実装）
-                double x1 = (cx - w / 2.0) * imageW;
-                double y1 = (cy - h / 2.0) * imageH;
-                double x2 = (cx + w / 2.0) * imageW;
-                double y2 = (cy + h / 2.0) * imageH;
+                // bbox: [cx, cy, w, h] (640x640座標系での正規化座標 0.0-1.0)
+                // 1. 640x640座標系でのピクセル座標に変換
+                double cx_pixel = cx * inputSize;
+                double cy_pixel = cy * inputSize;
+                double w_pixel = w * inputSize;
+                double h_pixel = h * inputSize;
                 
-                BBox bbox = new BBox(x1, y1, x2, y2);
-                candidates.add(new DetectionCandidate(bestClass, maxScore, bbox));
+                // 2. パディングを考慮して元画像サイズに変換
+                // パディング領域を除外
+                double cx_unpadded = (cx_pixel - resizeInfo.offsetX) / resizeInfo.scale;
+                double cy_unpadded = (cy_pixel - resizeInfo.offsetY) / resizeInfo.scale;
+                double w_unpadded = w_pixel / resizeInfo.scale;
+                double h_unpadded = h_pixel / resizeInfo.scale;
+                
+                // 3. 元画像サイズでのbbox座標を計算
+                double x1 = cx_unpadded - w_unpadded / 2.0;
+                double y1 = cy_unpadded - h_unpadded / 2.0;
+                double x2 = cx_unpadded + w_unpadded / 2.0;
+                double y2 = cy_unpadded + h_unpadded / 2.0;
+                
+                // 4. 画像範囲内にクリップ
+                x1 = Math.max(0.0, Math.min(imageW, x1));
+                y1 = Math.max(0.0, Math.min(imageH, y1));
+                x2 = Math.max(0.0, Math.min(imageW, x2));
+                y2 = Math.max(0.0, Math.min(imageH, y2));
+                
+                // 5. 有効なbboxかチェック
+                if (x2 > x1 && y2 > y1) {
+                    BBox bbox = new BBox(x1, y1, x2, y2);
+                    candidates.add(new DetectionCandidate(bestClass, maxScore, bbox));
+                }
             }
         }
         
