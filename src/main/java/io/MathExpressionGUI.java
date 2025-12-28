@@ -24,6 +24,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     private Button btnClear;
     private Button btnInference;
     private Button btnUndo;
+    private Button btnShowDetection;
     private Checkbox checkboxEraser;
     private Panel controlPanel;
     private DrawingCanvas drawingCanvas;
@@ -32,6 +33,8 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     
     // データ
     private OnnxInference inference;
+    private Detection lastDetection;  // 最後の推論結果を保持
+    private BufferedImage lastCanvasImage;  // 最後のキャンバス画像を保持
     
     public static void main(String[] args) {
         new MathExpressionGUI();
@@ -60,6 +63,10 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         btnUndo = new Button("Undo");
         btnUndo.setFont(buttonFont);
         btnUndo.addActionListener(this);
+        btnShowDetection = new Button("検出領域を表示");
+        btnShowDetection.setFont(buttonFont);
+        btnShowDetection.addActionListener(this);
+        btnShowDetection.setEnabled(false);  // 初期状態では無効
         checkboxEraser = new Checkbox("消しゴムモード");
         checkboxEraser.setFont(buttonFont);
         checkboxEraser.addItemListener(e -> {
@@ -68,6 +75,7 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         controlPanel.add(btnClear);
         controlPanel.add(btnInference);
         controlPanel.add(btnUndo);
+        controlPanel.add(btnShowDetection);
         controlPanel.add(checkboxEraser);
         this.add(controlPanel, BorderLayout.NORTH);
         
@@ -119,10 +127,15 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     public void actionPerformed(ActionEvent e) {
         if (e.getSource() == btnClear) {
             drawingCanvas.clearCanvas();
+            lastDetection = null;
+            lastCanvasImage = null;
+            btnShowDetection.setEnabled(false);
         } else if (e.getSource() == btnInference) {
             performInference();
         } else if (e.getSource() == btnUndo) {
             drawingCanvas.undo();
+        } else if (e.getSource() == btnShowDetection) {
+            showDetectionAreas();
         }
     }
     
@@ -175,6 +188,12 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             // 1. ONNX推論を実行
             resultArea.append("推論を実行中...\n");
             Detection detection = inference.detect(canvasImage, imageW, imageH);
+            
+            // 検出結果を保持
+            lastDetection = detection;
+            lastCanvasImage = canvasImage;
+            btnShowDetection.setEnabled(true);  // 検出領域表示ボタンを有効化
+            
             resultArea.append("検出シンボル数: " + detection.symbols.size() + "\n");
             
             // デバッグ情報: 検出されたシンボルとスコアを表示
@@ -272,6 +291,108 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             resultArea.append("エラー: " + e.getMessage() + "\n");
             e.printStackTrace();
         }
+    }
+    
+    /**
+     * 検出領域を表示するウィンドウを開く
+     */
+    private void showDetectionAreas() {
+        if (lastDetection == null || lastCanvasImage == null) {
+            resultArea.append("エラー: 検出結果がありません。先に推論を実行してください。\n");
+            return;
+        }
+        
+        // 検出結果を描画した画像を作成
+        BufferedImage displayImage = new BufferedImage(
+            lastCanvasImage.getWidth(),
+            lastCanvasImage.getHeight(),
+            BufferedImage.TYPE_INT_RGB
+        );
+        Graphics2D g2d = displayImage.createGraphics();
+        
+        // 元画像を描画
+        g2d.drawImage(lastCanvasImage, 0, 0, null);
+        
+        // 検出されたbboxを描画
+        g2d.setStroke(new BasicStroke(3.0f));
+        Font labelFont = new Font(Font.SANS_SERIF, Font.BOLD, 24);
+        g2d.setFont(labelFont);
+        
+        // 色のリスト（各クラスに異なる色を割り当て）
+        Color[] colors = {
+            Color.RED, Color.BLUE, Color.GREEN, Color.ORANGE, Color.MAGENTA,
+            Color.CYAN, Color.YELLOW, Color.PINK, Color.LIGHT_GRAY, Color.DARK_GRAY
+        };
+        
+        for (int i = 0; i < lastDetection.symbols.size(); i++) {
+            DetSymbol sym = lastDetection.symbols.get(i);
+            parse.BBox bbox = sym.box;  // DetSymbolのboxフィールドを使用
+            
+            // 色を選択（クラスIDに基づいて）
+            Color color = colors[i % colors.length];
+            g2d.setColor(color);
+            
+            // bboxを描画
+            int x1 = (int) Math.round(bbox.x1);
+            int y1 = (int) Math.round(bbox.y1);
+            int x2 = (int) Math.round(bbox.x2);
+            int y2 = (int) Math.round(bbox.y2);
+            
+            // 矩形を描画
+            g2d.drawRect(x1, y1, x2 - x1, y2 - y1);
+            
+            // ラベル（クラス名とスコア）を描画
+            String label = String.format("%s (%.2f)", sym.token, sym.score);
+            
+            // ラベルの背景を描画
+            FontMetrics fm = g2d.getFontMetrics();
+            int labelWidth = fm.stringWidth(label);
+            int labelHeight = fm.getHeight();
+            
+            g2d.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 200));
+            g2d.fillRect(x1, y1 - labelHeight - 2, labelWidth + 4, labelHeight + 2);
+            
+            // ラベルのテキストを描画
+            g2d.setColor(Color.WHITE);
+            g2d.drawString(label, x1 + 2, y1 - 4);
+        }
+        
+        g2d.dispose();
+        
+        // 新しいウィンドウで表示
+        Frame detectionFrame = new Frame("検出領域の表示");
+        detectionFrame.setSize(lastCanvasImage.getWidth() + 50, lastCanvasImage.getHeight() + 100);
+        detectionFrame.setLayout(new BorderLayout());
+        
+        Canvas detectionCanvas = new Canvas() {
+            @Override
+            public void paint(Graphics g) {
+                g.drawImage(displayImage, 0, 0, this);
+            }
+        };
+        detectionCanvas.setSize(lastCanvasImage.getWidth(), lastCanvasImage.getHeight());
+        
+        Panel infoPanel = new Panel();
+        infoPanel.setLayout(new FlowLayout());
+        Label infoLabel = new Label("検出数: " + lastDetection.symbols.size() + " 個");
+        infoLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        infoPanel.add(infoLabel);
+        
+        Button closeButton = new Button("閉じる");
+        closeButton.addActionListener(e -> detectionFrame.dispose());
+        infoPanel.add(closeButton);
+        
+        detectionFrame.add(detectionCanvas, BorderLayout.CENTER);
+        detectionFrame.add(infoPanel, BorderLayout.SOUTH);
+        
+        detectionFrame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                detectionFrame.dispose();
+            }
+        });
+        
+        detectionFrame.setVisible(true);
     }
     
     /**
