@@ -23,16 +23,23 @@ public class LabelMap {
         map.put("sqrt", "sqrt");
         map.put("sin", "sin");
         map.put("cos", "cos");
+        map.put("tan", "tan");
+        map.put("sec", "sec");
+        map.put("csc", "csc");
+        map.put("cot", "cot");
+        map.put("ln", "ln");
         map.put("exp", "exp");
         map.put("log", "log");
+        map.put("lim", "lim");
+        map.put("abs", "abs");
 
         // NOTE:
         // 分数バーが専用クラスとして出るなら：
         // map.put("frac_bar", "FRAC_BAR");
         // みたいに内部トークンとして扱える
         
-        // クラスID → クラス名のマッピング（拡張版：約50クラス）
-        // 順序: 数字0-9, 演算子+,-,*,/,=, アルファベットa-z, 括弧(,),|, ギリシャ文字・定数π,θ,∞,e, 特殊記号→,√
+        // クラスID → クラス名のマッピング（拡張版：約60クラス）
+        // 順序: 数字0-9, 演算子+,-,*,/,=, アルファベットa-z, 括弧(,),|, ギリシャ文字・定数π,θ,∞, 特殊記号→,√, 関数名
         // Python側のclasses.pyと順序を一致させる必要がある
         idToClass = new String[]{
             // 数字（10クラス: 0-9）
@@ -53,16 +60,19 @@ public class LabelMap {
             // 注意: "e"（自然対数の底）はアルファベット変数の"e"と重複するため削除
             
             // 特殊記号（2クラス: 47-48）
-            "→", "√"
+            "→", "√",
+            
+            // 関数名（12クラス: 49-60）
+            "sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "exp", "sqrt", "lim", "abs"
         };
-        // 合計49クラス（0-48）
+        // 合計61クラス（0-60）
     }
 
     /**
      * クラスIDからクラス名を取得
      * 
-     * @param classId クラスID（0-49）
-     * @return クラス名（例: "0", "+", "x", "π", "→"）
+     * @param classId クラスID（0-60）
+     * @return クラス名（例: "0", "+", "x", "π", "→", "sin", "lim"）
      */
     public String getClassLabel(int classId) {
         if (classId < 0 || classId >= idToClass.length) {
@@ -98,7 +108,9 @@ public class LabelMap {
         // アルファベット変数（小文字a-z）
         if (s.length() == 1 && s.charAt(0) >= 'a' && s.charAt(0) <= 'z') return true;
         // 関数名
-        if (s.equals("sqrt") || s.equals("sin") || s.equals("cos") || s.equals("exp") || s.equals("log")) return true;
+        if (s.equals("sqrt") || s.equals("sin") || s.equals("cos") || s.equals("tan") || 
+            s.equals("sec") || s.equals("csc") || s.equals("cot") || s.equals("ln") || 
+            s.equals("exp") || s.equals("log") || s.equals("lim") || s.equals("abs")) return true;
         // 特殊記号
         if (s.equals("π") || s.equals("θ") || s.equals("∞") || s.equals("→") || s.equals("√")) return true;
         // 数字（整数）

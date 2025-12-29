@@ -33,6 +33,20 @@ CLASSES = [
     # 特殊記号（2クラス）
     '→',  # 矢印（リミットの「～に近づく」）
     '√',  # ルート記号（平方根）
+    
+    # 関数名（12クラス）
+    'sin',  # 正弦
+    'cos',  # 余弦
+    'tan',  # 正接
+    'sec',  # 正割
+    'csc',  # 余割
+    'cot',  # 余接
+    'ln',   # 自然対数
+    'log',  # 対数
+    'exp',  # 指数関数
+    'sqrt', # 平方根
+    'lim',  # 極限
+    'abs',  # 絶対値
 ]
 
 # クラスIDマッピング（YOLO形式）
@@ -114,8 +128,27 @@ def latex_to_class(latex_char: str) -> Optional[str]:
         if latex_char in CLASSES:
             return latex_char
     
+    # LaTeX関数名の変換マッピング
+    latex_function_map: Dict[str, str] = {
+        '\\sin': 'sin',
+        '\\cos': 'cos',
+        '\\tan': 'tan',
+        '\\sec': 'sec',
+        '\\csc': 'csc',
+        '\\cot': 'cot',
+        '\\ln': 'ln',
+        '\\log': 'log',
+        '\\exp': 'exp',
+        '\\sqrt': 'sqrt',
+        '\\lim': 'lim',
+        '\\abs': 'abs',
+        '\\left|': 'abs',  # 絶対値の開始（簡易対応）
+    }
+    
+    if latex_char in latex_function_map:
+        return latex_function_map[latex_char]
+    
     # 対象外のLaTeX記号
-    # 例: \lim_, \sin, \cos, \tan, \log など（これらは複数文字なので後処理で処理）
     return None
 
 
