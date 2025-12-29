@@ -148,6 +148,13 @@ def latex_to_class(latex_char: str) -> Optional[str]:
     if latex_char in latex_function_map:
         return latex_function_map[latex_char]
     
+    # 関数名の文字列（'sin', 'cos', 'lim'など）を直接認識
+    # 注意: これは個別の文字として保存されている場合の処理とは別に、
+    # 既に文字列として保存されている場合に対応する
+    if latex_char in CLASSES and len(latex_char) > 1:
+        # 関数名として既にCLASSESに含まれている場合
+        return latex_char
+    
     # 対象外のLaTeX記号
     return None
 

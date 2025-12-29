@@ -56,40 +56,94 @@ def extract_labels_and_bboxes(sample: Dict) -> List[Dict]:
     
     results = []
     
-    for i, latex_char in enumerate(visible_chars):
-        # LaTeX文字をクラスに変換（設定ファイルから）
-        class_char = latex_to_class(latex_char)
+    # 関数名リスト（CLASSESから関数名を抽出）
+    function_names = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'ln', 'log', 'exp', 'sqrt', 'lim', 'abs']
+    
+    i = 0
+    while i < len(visible_chars):
+        # 関数名のマッチングを試行
+        matched_function = None
+        matched_length = 0
         
-        if class_char is None:
-            # 対象外の文字はスキップ
-            continue
+        for func_name in function_names:
+            if i + len(func_name) <= len(visible_chars):
+                # 連続する文字列が関数名と一致するかチェック
+                candidate = ''.join(visible_chars[i:i+len(func_name)])
+                if candidate == func_name:
+                    matched_function = func_name
+                    matched_length = len(func_name)
+                    break
         
-        if i >= len(xmins) or i >= len(xmaxs) or i >= len(ymins) or i >= len(ymaxs):
-            continue
-        
-        # 正規化座標
-        bbox_norm = (
-            xmins[i],
-            ymins[i],
-            xmaxs[i],
-            ymaxs[i]
-        )
-        
-        # 生座標
-        bbox_raw = (
-            xmins_raw[i] if i < len(xmins_raw) else 0,
-            ymins_raw[i] if i < len(ymins_raw) else 0,
-            xmaxs_raw[i] if i < len(xmaxs_raw) else 0,
-            ymaxs_raw[i] if i < len(ymaxs_raw) else 0
-        )
-        
-        results.append({
-            'class': class_char,
-            'bbox_norm': bbox_norm,
-            'bbox_raw': bbox_raw,
-            'latex': latex_char,
-            'index': i
-        })
+        if matched_function:
+            # 関数名として処理
+            # 最初と最後のbboxを結合して関数全体のbboxを作成
+            start_idx = i
+            end_idx = i + matched_length - 1
+            
+            if (end_idx < len(xmins) and end_idx < len(xmaxs) and 
+                end_idx < len(ymins) and end_idx < len(ymaxs)):
+                # 正規化座標（関数全体のbbox）
+                bbox_norm = (
+                    min(xmins[start_idx:end_idx+1]),
+                    min(ymins[start_idx:end_idx+1]),
+                    max(xmaxs[start_idx:end_idx+1]),
+                    max(ymaxs[start_idx:end_idx+1])
+                )
+                
+                # 生座標（関数全体のbbox）
+                xmins_raw_slice = [xmins_raw[j] for j in range(start_idx, end_idx+1) if j < len(xmins_raw)]
+                ymins_raw_slice = [ymins_raw[j] for j in range(start_idx, end_idx+1) if j < len(ymins_raw)]
+                xmaxs_raw_slice = [xmaxs_raw[j] for j in range(start_idx, end_idx+1) if j < len(xmaxs_raw)]
+                ymaxs_raw_slice = [ymaxs_raw[j] for j in range(start_idx, end_idx+1) if j < len(ymaxs_raw)]
+                
+                bbox_raw = (
+                    min(xmins_raw_slice) if xmins_raw_slice else 0,
+                    min(ymins_raw_slice) if ymins_raw_slice else 0,
+                    max(xmaxs_raw_slice) if xmaxs_raw_slice else 0,
+                    max(ymaxs_raw_slice) if ymaxs_raw_slice else 0
+                )
+                
+                results.append({
+                    'class': matched_function,
+                    'bbox_norm': bbox_norm,
+                    'bbox_raw': bbox_raw,
+                    'latex': matched_function,  # 関数名全体
+                    'index': i
+                })
+            
+            i += matched_length
+        else:
+            # 通常の文字として処理
+            latex_char = visible_chars[i]
+            class_char = latex_to_class(latex_char)
+            
+            if class_char is not None:
+                if i < len(xmins) and i < len(xmaxs) and i < len(ymins) and i < len(ymaxs):
+                    # 正規化座標
+                    bbox_norm = (
+                        xmins[i],
+                        ymins[i],
+                        xmaxs[i],
+                        ymaxs[i]
+                    )
+                    
+                    # 生座標
+                    bbox_raw = (
+                        xmins_raw[i] if i < len(xmins_raw) else 0,
+                        ymins_raw[i] if i < len(ymins_raw) else 0,
+                        xmaxs_raw[i] if i < len(xmaxs_raw) else 0,
+                        ymaxs_raw[i] if i < len(ymaxs_raw) else 0
+                    )
+                    
+                    results.append({
+                        'class': class_char,
+                        'bbox_norm': bbox_norm,
+                        'bbox_raw': bbox_raw,
+                        'latex': latex_char,
+                        'index': i
+                    })
+            
+            i += 1
     
     return results
 

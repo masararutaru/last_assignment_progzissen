@@ -76,36 +76,81 @@ def extract_labels_from_sample(sample: Dict) -> List[Dict]:
     
     results = []
     
-    for i, latex_char in enumerate(visible_chars):
-        # LaTeX文字をクラスに変換（設定ファイルから）
-        class_char = latex_to_class(latex_char)
+    # 関数名リスト（CLASSESから関数名を抽出）
+    function_names = ['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'ln', 'log', 'exp', 'sqrt', 'lim', 'abs']
+    
+    i = 0
+    while i < len(visible_chars):
+        # 関数名のマッチングを試行
+        matched_function = None
+        matched_length = 0
         
-        if class_char is None:
-            # 対象外の文字はスキップ
-            continue
+        for func_name in function_names:
+            if i + len(func_name) <= len(visible_chars):
+                # 連続する文字列が関数名と一致するかチェック
+                candidate = ''.join(visible_chars[i:i+len(func_name)])
+                if candidate == func_name:
+                    matched_function = func_name
+                    matched_length = len(func_name)
+                    break
         
-        if i >= len(xmins) or i >= len(xmaxs) or i >= len(ymins) or i >= len(ymaxs):
-            continue
-        
-        # クラスIDを取得（設定ファイルから）
-        class_id = CLASS_TO_ID[class_char]
-        
-        # 正規化座標を取得（既に0.0-1.0の範囲）
-        xmin = xmins[i]
-        ymin = ymins[i]
-        xmax = xmaxs[i]
-        ymax = ymaxs[i]
-        
-        # YOLO形式に変換
-        center_x, center_y, width, height = convert_bbox_to_yolo_format(
-            xmin, ymin, xmax, ymax
-        )
-        
-        results.append({
-            'class': class_char,
-            'class_id': class_id,
-            'bbox_yolo': (center_x, center_y, width, height)
-        })
+        if matched_function:
+            # 関数名として処理
+            # 最初と最後のbboxを結合して関数全体のbboxを作成
+            start_idx = i
+            end_idx = i + matched_length - 1
+            
+            if (end_idx < len(xmins) and end_idx < len(xmaxs) and 
+                end_idx < len(ymins) and end_idx < len(ymaxs)):
+                # 関数全体のbboxを計算（最初と最後のbboxを結合）
+                xmin = min(xmins[start_idx:end_idx+1])
+                ymin = min(ymins[start_idx:end_idx+1])
+                xmax = max(xmaxs[start_idx:end_idx+1])
+                ymax = max(ymaxs[start_idx:end_idx+1])
+                
+                # クラスIDを取得
+                class_id = CLASS_TO_ID[matched_function]
+                
+                # YOLO形式に変換
+                center_x, center_y, width, height = convert_bbox_to_yolo_format(
+                    xmin, ymin, xmax, ymax
+                )
+                
+                results.append({
+                    'class': matched_function,
+                    'class_id': class_id,
+                    'bbox_yolo': (center_x, center_y, width, height)
+                })
+            
+            i += matched_length
+        else:
+            # 通常の文字として処理
+            latex_char = visible_chars[i]
+            class_char = latex_to_class(latex_char)
+            
+            if class_char is not None:
+                if i < len(xmins) and i < len(xmaxs) and i < len(ymins) and i < len(ymaxs):
+                    # クラスIDを取得
+                    class_id = CLASS_TO_ID[class_char]
+                    
+                    # 正規化座標を取得（既に0.0-1.0の範囲）
+                    xmin = xmins[i]
+                    ymin = ymins[i]
+                    xmax = xmaxs[i]
+                    ymax = ymaxs[i]
+                    
+                    # YOLO形式に変換
+                    center_x, center_y, width, height = convert_bbox_to_yolo_format(
+                        xmin, ymin, xmax, ymax
+                    )
+                    
+                    results.append({
+                        'class': class_char,
+                        'class_id': class_id,
+                        'bbox_yolo': (center_x, center_y, width, height)
+                    })
+            
+            i += 1
     
     return results
 
