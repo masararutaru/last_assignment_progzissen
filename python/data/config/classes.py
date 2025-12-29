@@ -113,7 +113,7 @@ def latex_to_class(latex_char: str) -> Optional[str]:
         # 特殊記号
         '\\to': '→',
         '\\rightarrow': '→',
-        '\\sqrt': '√',
+        # '\\sqrt': '√',  # これは'sqrt'クラスとして処理するため、latex_function_mapで処理
         
         # 自然対数の底（LaTeXでは通常そのまま 'e' と書く）
         # 注意: 'e'はアルファベット変数として既にCLASSESに含まれているため、ここでのマッピングは不要
@@ -139,8 +139,9 @@ def latex_to_class(latex_char: str) -> Optional[str]:
         '\\ln': 'ln',
         '\\log': 'log',
         '\\exp': 'exp',
-        '\\sqrt': 'sqrt',
+        '\\sqrt': 'sqrt',  # '√'ではなく'sqrt'クラスとして認識
         '\\lim': 'lim',
+        '\\lim_': 'lim',  # アンダースコア付きも処理（例: '\lim_{x \to 0}'）
         '\\abs': 'abs',
         '\\left|': 'abs',  # 絶対値の開始（簡易対応）
     }
