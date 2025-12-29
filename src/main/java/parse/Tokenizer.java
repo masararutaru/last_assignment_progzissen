@@ -4,8 +4,17 @@ import java.util.*;
 
 public class Tokenizer {
 
-    // 1引数関数（Phase1）
-    private static final Set<String> FUNCS = Set.of("sin","cos","exp","log","sqrt","neg");
+    // 関数名リスト（拡張版）
+    private static final Set<String> FUNCS = Set.of(
+        "sin", "cos", "tan", "sec", "csc", "cot",  // 三角関数
+        "ln", "log", "exp",                        // 対数・指数
+        "sqrt", "abs",                             // その他関数
+        "neg", "sub",                              // 単項・二項演算
+        "diff", "limit"                            // 微分・極限
+    );
+    
+    // 定数
+    private static final Set<String> CONSTANTS = Set.of("π", "e", "∞");
 
     public static List<Token> tokenize(String s) {
         List<Token> out = new ArrayList<>();
@@ -40,15 +49,49 @@ public class Tokenizer {
                 String id = s.substring(i, j);
 
                 if (FUNCS.contains(id)) out.add(Token.func(id));
-                else out.add(Token.sym(id)); // 今は x 想定、将来拡張可
+                else out.add(Token.sym(id)); // 変数（a-z）
 
                 i = j;
                 continue;
             }
+            
+            // 特殊文字（π, θ, ∞, →, √）
+            if (c == 'π' || c == 'θ' || c == '∞') {
+                String constName = String.valueOf(c);
+                if (CONSTANTS.contains(constName)) {
+                    // 定数として扱う（数値ノードに変換される）
+                    out.add(Token.num(getConstantValue(constName)));
+                } else {
+                    out.add(Token.sym(constName));
+                }
+                i++;
+                continue;
+            }
+            
+            if (c == '→') {
+                // 矢印は演算子として扱う（簡易実装）
+                out.add(Token.op("→"));
+                i++;
+                continue;
+            }
+            
+            if (c == '√') {
+                // ルート記号は関数として扱う
+                out.add(Token.func("sqrt"));
+                i++;
+                continue;
+            }
 
-            // parentheses / comma
+            // parentheses / comma / absolute value
             if (c == '(') { out.add(Token.lp()); i++; continue; }
             if (c == ')') { out.add(Token.rp()); i++; continue; }
+            if (c == '|') { 
+                // 絶対値記号（簡易実装：括弧として扱う）
+                // 実際の処理はSpatialToExprでabs(...)に変換済み
+                out.add(Token.rp()); // 簡易的に閉じ括弧として扱う
+                i++; 
+                continue; 
+            }
             if (c == ',') { out.add(Token.comma()); i++; continue; }
 
             // operators
@@ -58,6 +101,18 @@ public class Tokenizer {
         }
 
         return out;
+    }
+    
+    /**
+     * 定数の値を取得
+     */
+    private static double getConstantValue(String constName) {
+        switch (constName) {
+            case "π": return Math.PI;
+            case "e": return Math.E;
+            case "∞": return Double.POSITIVE_INFINITY;
+            default: throw new IllegalArgumentException("Unknown constant: " + constName);
+        }
     }
 }
 

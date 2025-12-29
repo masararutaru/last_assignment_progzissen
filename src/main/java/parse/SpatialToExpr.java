@@ -83,28 +83,30 @@ public class SpatialToExpr {
         //    将来: cyでクラスタリングして複数行対応
         s.sort(Comparator.comparingDouble(a -> a.box.cx()));
 
-        // 3) トークン列にしつつ、べき(右上)をまとめる
+        // 3) 関数名のマージ（複数文字の関数名を1つのトークンにまとめる）
+        // 例: 's','i','n' → "sin", 'l','o','g' → "log"
+        List<DetSymbol> merged = mergeFunctionNames(s, warnings);
+        
+        // 4) トークン列にしつつ、べき(右上)をまとめる
         // トークンとDetSymbolの対応を保持（数字の連続判定のため）
         List<String> tokens = new ArrayList<>();
         List<DetSymbol> tokenSymbols = new ArrayList<>(); // 各トークンに対応するDetSymbol（null可）
         int i = 0;
-        while (i < s.size()) {
-            DetSymbol cur = s.get(i);
+        while (i < merged.size()) {
+            DetSymbol cur = merged.get(i);
 
-            // 関数は "sin" 等のトークンが来る想定： sin (...) の形にする
-            // （モデルが 's','i','n' 分割なら、ここで連結ルール追加が必要）
             tokens.add(cur.token);
             tokenSymbols.add(cur);
 
             // exponent判定：次が "右上に小さい塊" なら ^( ... ) を挿入
-            if (i + 1 < s.size()) {
-                DetSymbol nxt = s.get(i + 1);
+            if (i + 1 < merged.size()) {
+                DetSymbol nxt = merged.get(i + 1);
                 if (looksLikeSuperscript(cur, nxt)) {
                     // superscript は "連続する限り" まとめる（例: x^(12))
                     List<DetSymbol> sup = new ArrayList<>();
                     int j = i + 1;
-                    while (j < s.size() && looksLikeSuperscript(cur, s.get(j))) {
-                        sup.add(s.get(j));
+                    while (j < merged.size() && looksLikeSuperscript(cur, merged.get(j))) {
+                        sup.add(merged.get(j));
                         j++;
                     }
                     
@@ -133,32 +135,270 @@ public class SpatialToExpr {
 
             i++;
         }
+        
+        // 5) ルート記号の処理（√記号の直後の式を括弧で囲む）
+        tokens = processSqrtSymbols(tokens, tokenSymbols, warnings);
+        
+        // 6) 絶対値の処理（|...|をabs(...)に変換）
+        tokens = processAbsoluteValue(tokens, warnings);
+        
+        // 7) 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
+        tokens = processFractions(tokens, tokenSymbols, warnings);
+        
+        // 8) 微分演算子の処理（d/dx構造を検出）
+        tokens = processDerivatives(tokens, warnings);
+        
+        // 9) 極限の処理（lim_{x→a}構造を検出）
+        tokens = processLimits(tokens, warnings);
 
-        // 4) 暗黙の掛け算を挿入（めちゃ大事）
+        // 10) 暗黙の掛け算を挿入（めちゃ大事）
         List<String> withMul = new ArrayList<>();
         for (int k = 0; k < tokens.size(); k++) {
             String a = tokens.get(k);
             withMul.add(a);
             if (k + 1 < tokens.size()) {
                 String b = tokens.get(k + 1);
-                DetSymbol symA = tokenSymbols.get(k);
-                DetSymbol symB = tokenSymbols.get(k + 1);
+                DetSymbol symA = k < tokenSymbols.size() ? tokenSymbols.get(k) : null;
+                DetSymbol symB = k + 1 < tokenSymbols.size() ? tokenSymbols.get(k + 1) : null;
                 if (needImplicitMul(a, b, symA, symB)) {
                     withMul.add("*");
                 }
             }
         }
 
-        // 4.5) 括弧の対応を修正（)が(に誤認識される問題に対処）
+        // 11) 括弧の対応を修正（)が(に誤認識される問題に対処）
         List<String> correctedParens = fixParenMismatch(withMul, warnings);
 
-        // 5) 文字列化
+        // 12) 文字列化
         String expr = String.join("", correctedParens);
 
-        // 6) ちょいデバッグしやすく
+        // 13) ちょいデバッグしやすく
         if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
 
         return new Result(expr, warnings);
+    }
+    
+    /**
+     * 関数名のマージ（複数文字の関数名を1つのトークンにまとめる）
+     * 例: 's','i','n' → "sin", 'l','o','g' → "log"
+     */
+    private List<DetSymbol> mergeFunctionNames(List<DetSymbol> symbols, List<String> warnings) {
+        // 認識対象の関数名リスト
+        String[] functionNames = {"sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "lim"};
+        
+        List<DetSymbol> result = new ArrayList<>();
+        int i = 0;
+        
+        while (i < symbols.size()) {
+            // 関数名の候補をチェック
+            boolean matched = false;
+            for (String funcName : functionNames) {
+                if (i + funcName.length() <= symbols.size()) {
+                    // 連続する文字列が関数名と一致するかチェック
+                    StringBuilder candidate = new StringBuilder();
+                    for (int j = 0; j < funcName.length(); j++) {
+                        candidate.append(symbols.get(i + j).token);
+                    }
+                    
+                    if (candidate.toString().equals(funcName)) {
+                        // 関数名としてマージ
+                        // 最初のシンボルのbboxを使用（簡易実装）
+                        DetSymbol first = symbols.get(i);
+                        DetSymbol merged = new DetSymbol(
+                            first.cls,
+                            funcName,
+                            first.score, // 平均スコアを計算する方が良いが、簡易的に最初のスコアを使用
+                            first.box
+                        );
+                        result.add(merged);
+                        i += funcName.length();
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!matched) {
+                result.add(symbols.get(i));
+                i++;
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * ルート記号の処理（√記号の直後の式を括弧で囲む）
+     */
+    private List<String> processSqrtSymbols(List<String> tokens, List<DetSymbol> tokenSymbols, List<String> warnings) {
+        List<String> result = new ArrayList<>();
+        
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).equals("√")) {
+                result.add("sqrt");
+                result.add("(");
+                // 次のトークンから式の終わりまでを括弧で囲む
+                // 簡易実装：次の数個のトークンを括弧で囲む（実際はより高度な解析が必要）
+                int j = i + 1;
+                int parenCount = 0;
+                while (j < tokens.size()) {
+                    String tok = tokens.get(j);
+                    if (tok.equals("(")) parenCount++;
+                    if (tok.equals(")")) {
+                        if (parenCount == 0) break;
+                        parenCount--;
+                    }
+                    // 演算子で終わる場合も終了（簡易実装）
+                    if (parenCount == 0 && (tok.equals("+") || tok.equals("-") || tok.equals("*") || tok.equals("/"))) {
+                        break;
+                    }
+                    j++;
+                }
+                // 式を追加
+                for (int k = i + 1; k < j; k++) {
+                    result.add(tokens.get(k));
+                }
+                result.add(")");
+                i = j - 1; // ループでi++されるので-1
+            } else {
+                result.add(tokens.get(i));
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 絶対値の処理（|...|をabs(...)に変換）
+     */
+    private List<String> processAbsoluteValue(List<String> tokens, List<String> warnings) {
+        List<String> result = new ArrayList<>();
+        List<Integer> absPositions = new ArrayList<>();
+        
+        // 絶対値記号|の位置を記録
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).equals("|")) {
+                absPositions.add(i);
+            }
+        }
+        
+        // ペアを見つけてabs(...)に変換
+        boolean[] used = new boolean[tokens.size()];
+        for (int i = 0; i < absPositions.size(); i++) {
+            int openIdx = absPositions.get(i);
+            if (used[openIdx]) continue;
+            
+            // 対応する閉じ|を探す
+            int closeIdx = -1;
+            for (int j = i + 1; j < absPositions.size(); j++) {
+                int candidateIdx = absPositions.get(j);
+                if (!used[candidateIdx]) {
+                    closeIdx = candidateIdx;
+                    break;
+                }
+            }
+            
+            if (closeIdx > openIdx) {
+                // abs(...)に変換
+                used[openIdx] = true;
+                used[closeIdx] = true;
+                
+                // トークンを変換
+                for (int k = 0; k < tokens.size(); k++) {
+                    if (k == openIdx) {
+                        result.add("abs");
+                        result.add("(");
+                    } else if (k == closeIdx) {
+                        result.add(")");
+                    } else if (!used[k] || (k > openIdx && k < closeIdx)) {
+                        result.add(tokens.get(k));
+                    }
+                }
+            }
+        }
+        
+        // ペアが見つからなかった場合はそのまま
+        if (result.isEmpty()) {
+            return tokens;
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
+     * 簡易実装：水平線状の-記号で上下にシンボルがある場合を分数とみなす
+     */
+    private List<String> processFractions(List<String> tokens, List<DetSymbol> tokenSymbols, List<String> warnings) {
+        // 簡易実装：分数線の検出は複雑なので、後で拡張
+        // 現時点ではそのまま返す
+        return tokens;
+    }
+    
+    /**
+     * 微分演算子の処理（d/dx構造を検出）
+     */
+    private List<String> processDerivatives(List<String> tokens, List<String> warnings) {
+        List<String> result = new ArrayList<>();
+        
+        for (int i = 0; i < tokens.size(); i++) {
+            // d/dx パターンを検出
+            if (i + 3 < tokens.size() &&
+                tokens.get(i).equals("d") &&
+                tokens.get(i + 1).equals("/") &&
+                tokens.get(i + 2).equals("d") &&
+                isVariable(tokens.get(i + 3))) {
+                
+                result.add("diff");
+                result.add("(");
+                result.add(tokens.get(i + 3)); // 変数名
+                result.add(")");
+                i += 3; // ループでi++されるので+3
+            } else {
+                result.add(tokens.get(i));
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 極限の処理（lim_{x→a}構造を検出）
+     */
+    private List<String> processLimits(List<String> tokens, List<String> warnings) {
+        List<String> result = new ArrayList<>();
+        
+        for (int i = 0; i < tokens.size(); i++) {
+            // lim パターンを検出（簡易実装）
+            if (i < tokens.size() && tokens.get(i).equals("lim")) {
+                result.add("limit");
+                result.add("(");
+                // 次のトークンから式を探す（簡易実装）
+                int j = i + 1;
+                while (j < tokens.size() && !tokens.get(j).equals("(")) {
+                    j++;
+                }
+                if (j < tokens.size()) {
+                    // 括弧内の式をコピー
+                    int parenCount = 1;
+                    j++;
+                    while (j < tokens.size() && parenCount > 0) {
+                        if (tokens.get(j).equals("(")) parenCount++;
+                        if (tokens.get(j).equals(")")) parenCount--;
+                        if (parenCount > 0) {
+                            result.add(tokens.get(j));
+                        }
+                        j++;
+                    }
+                }
+                result.add(")");
+                i = j - 1;
+            } else {
+                result.add(tokens.get(i));
+            }
+        }
+        
+        return result;
     }
 
     private boolean looksLikeSuperscript(DetSymbol base, DetSymbol cand) {
@@ -186,22 +426,25 @@ public class SpatialToExpr {
 
     private boolean isAtomEnd(String a) {
         // 直前が "値を終える" トークンなら true
-        // 例: 2 x ) は後ろに値が来たら掛け算が必要
-        return isNumberLike(a) || a.equals("x") || a.equals(")") ;
+        // 例: 2 x ) | は後ろに値が来たら掛け算が必要
+        return isNumberLike(a) || isVariable(a) || a.equals(")") || a.equals("|");
     }
 
     private boolean isAtomStart(String b) {
         // 次が "値を開始する" トークンなら true
-        // 例: x 2 ( sin sqrt は前が値なら掛け算が必要
-        return isNumberLike(b) || b.equals("x") || b.equals("(") || isFunc(b) || b.equals("sqrt");
+        // 例: x 2 ( sin sqrt √ は前が値なら掛け算が必要
+        return isNumberLike(b) || isVariable(b) || b.equals("(") || b.equals("|") || isFunc(b) || b.equals("sqrt") || b.equals("√");
     }
 
     private boolean isFunc(String t) {
-        return t.equals("sin") || t.equals("cos") || t.equals("exp") || t.equals("log") || t.equals("sqrt");
+        return t.equals("sin") || t.equals("cos") || t.equals("tan") || t.equals("sec") || 
+               t.equals("csc") || t.equals("cot") || t.equals("ln") || t.equals("log") || 
+               t.equals("exp") || t.equals("sqrt") || t.equals("abs") || t.equals("lim") ||
+               t.equals("limit") || t.equals("diff");
     }
 
     private boolean isOperator(String t) {
-        return t.equals("+") || t.equals("-") || t.equals("*") || t.equals("/") || t.equals("^");
+        return t.equals("+") || t.equals("-") || t.equals("*") || t.equals("/") || t.equals("^") || t.equals("=");
     }
 
     private boolean needImplicitMul(String a, String b, DetSymbol symA, DetSymbol symB) {
@@ -239,6 +482,13 @@ public class SpatialToExpr {
             if (bal < 0) return true;
         }
         return bal != 0;
+    }
+    
+    private boolean isVariable(String token) {
+        // 小文字アルファベット1文字を変数とみなす
+        if (token == null || token.length() != 1) return false;
+        char c = token.charAt(0);
+        return c >= 'a' && c <= 'z';
     }
     
     /**
