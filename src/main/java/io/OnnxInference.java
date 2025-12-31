@@ -27,34 +27,6 @@ public class OnnxInference implements AutoCloseable {
     private double nmsIouThreshold = 0.45;
     
     /**
-     * クラスごとのスコア補正係数（検出しにくいクラスを補助）
-     * クラスID 1 = "1", クラスID 17 = ")"
-     */
-    private double getClassScoreBoost(int classId) {
-        if (classId == 1) {  // "1"
-            return 1.3;  // 1のスコアを30%増やす
-        }
-        if (classId == 17) {  // ")"
-            return 1.5;  // )のスコアを50%増やす
-        }
-        return 1.0;  // その他は補正なし
-    }
-    
-    /**
-     * クラスごとの閾値（検出しにくいクラスは閾値を下げる）
-     * クラスID 1 = "1", クラスID 17 = ")"
-     */
-    private double getClassThreshold(int classId) {
-        if (classId == 1) {  // "1"
-            return confidenceThreshold * 0.7;  // 1の閾値を30%下げる
-        }
-        if (classId == 17) {  // ")"
-            return confidenceThreshold * 0.6;  // )の閾値を40%下げる
-        }
-        return confidenceThreshold;  // その他は通常の閾値
-    }
-    
-    /**
      * ONNXモデルを読み込む
      * 
      * @param modelPath ONNXモデルファイルのパス（例: "assets/model.onnx"）
@@ -391,18 +363,17 @@ public class OnnxInference implements AutoCloseable {
                 }
                 double classScore = det[idx];
                 
-                // スコア計算: objectness * classScore に加えて、クラスごとの補正を適用
+                // スコア計算: objectness * classScore
                 double baseScore = objectness * classScore;
-                double boostedScore = baseScore * getClassScoreBoost(c);
                 
                 // 上位2つのクラスを記録（)と(の誤認識を防ぐため）
-                if (boostedScore > maxScore) {
+                if (baseScore > maxScore) {
                     secondBestScore = maxScore;
                     secondBestClass = bestClass;
-                    maxScore = boostedScore;
+                    maxScore = baseScore;
                     bestClass = c;
-                } else if (boostedScore > secondBestScore) {
-                    secondBestScore = boostedScore;
+                } else if (baseScore > secondBestScore) {
+                    secondBestScore = baseScore;
                     secondBestClass = c;
                 }
             }
@@ -427,12 +398,11 @@ public class OnnxInference implements AutoCloseable {
             // デバッグ: 最初の5個の候補のスコア情報を表示
             if (i < 5) {
                 System.out.println(String.format("    bestClass=%d maxScore=%.3f (2位: class=%d score=%.3f, 閾値=%.3f)", 
-                    bestClass, maxScore, secondBestClass, secondBestScore, 
-                    bestClass >= 0 ? getClassThreshold(bestClass) : confidenceThreshold));
+                    bestClass, maxScore, secondBestClass, secondBestScore, confidenceThreshold));
             }
             
-            // スコア閾値でフィルタリング（クラスごとの閾値を使用）
-            double classThreshold = bestClass >= 0 ? getClassThreshold(bestClass) : confidenceThreshold;
+            // スコア閾値でフィルタリング
+            double classThreshold = confidenceThreshold;
             if (maxScore >= classThreshold && bestClass >= 0) {
                 candidateCount++;
                 // bbox: [cx, cy, w, h] 
