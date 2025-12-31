@@ -521,15 +521,78 @@ public class SpatialToExpr {
                 if (token.equals(")")) closeCount++;
             }
             
-            // バランスが取れていれば終了
-            if (openCount == closeCount) {
+            // バランスが取れていても、実際の対応関係をチェック
+            boolean hasMismatch = false;
+            int checkBalance = 0;
+            for (int i = 0; i < result.size(); i++) {
+                String token = result.get(i);
+                if (token.equals("(")) {
+                    checkBalance++;
+                } else if (token.equals(")")) {
+                    checkBalance--;
+                    if (checkBalance < 0) {
+                        // 対応する開き括弧がない閉じ括弧がある
+                        hasMismatch = true;
+                        break;
+                    }
+                }
+            }
+            // 最後のバランスもチェック
+            if (checkBalance != 0) {
+                hasMismatch = true;
+            }
+            
+            // バランスが取れていて、対応関係も正しければ終了
+            if (openCount == closeCount && !hasMismatch) {
                 break;
             }
             
             boolean fixed = false;
             
+            // バランスが取れていても、対応関係が正しくない場合の修正
+            if (openCount == closeCount && hasMismatch) {
+                // 左から右に走査して、対応する開き括弧がない閉じ括弧を開き括弧に修正
+                int mismatchBalance = 0;
+                for (int i = 0; i < result.size(); i++) {
+                    String token = result.get(i);
+                    if (token.equals("(")) {
+                        mismatchBalance++;
+                    } else if (token.equals(")")) {
+                        if (mismatchBalance <= 0) {
+                            // 対応する開き括弧がない閉じ括弧を開き括弧に修正
+                            result.set(i, "(");
+                            fixed = true;
+                            warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d、対応関係修正）", i));
+                            break; // 1つずつ修正
+                        } else {
+                            mismatchBalance--;
+                        }
+                    }
+                }
+                
+                // まだ問題がある場合、右から左に走査
+                if (!fixed) {
+                    mismatchBalance = 0;
+                    for (int i = result.size() - 1; i >= 0; i--) {
+                        String token = result.get(i);
+                        if (token.equals(")")) {
+                            mismatchBalance++;
+                        } else if (token.equals("(")) {
+                            if (mismatchBalance <= 0) {
+                                // 対応する閉じ括弧がない開き括弧を閉じ括弧に修正
+                                result.set(i, ")");
+                                fixed = true;
+                                warnings.add(String.format("括弧の対応を修正: 未対応の(を)に変更（位置%d、対応関係修正）", i));
+                                break; // 1つずつ修正
+                            } else {
+                                mismatchBalance--;
+                            }
+                        }
+                    }
+                }
+            }
             // 開き括弧が余っている場合の修正
-            if (openCount > closeCount) {
+            else if (openCount > closeCount) {
                 int excess = openCount - closeCount;
                 int fixedCount = 0;
                 
