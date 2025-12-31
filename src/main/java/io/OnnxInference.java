@@ -23,8 +23,9 @@ public class OnnxInference implements AutoCloseable {
     private int numClasses; // モデルの出力次元から動的に決定
     
     // 後処理パラメータ
-    private double confidenceThreshold = 0.05;  // 一時的に低く設定してデバッグ（元: 0.15）
-    private double nmsIouThreshold = 0.45;
+    private double confidenceThreshold = 0.2;  // 信頼度閾値（重複検出を減らすため0.2に設定）
+    private double nmsIouThreshold = 0.45;  // 異なるクラス間のIoU閾値
+    private double nmsIouThresholdSameClass = 0.3;  // 同じクラス間のIoU閾値（より厳しく）
     
     /**
      * ONNXモデルを読み込む
@@ -469,9 +470,13 @@ public class OnnxInference implements AutoCloseable {
         System.out.println("  bbox無効で除外: " + filteredByBbox);
         System.out.println("  NMS前の候補数: " + candidates.size());
         
-        // NMS実行
-        List<DetectionCandidate> nmsResult = nonMaxSuppression(candidates, nmsIouThreshold);
+        // NMS実行（同じクラスの重複をより積極的に抑制）
+        List<DetectionCandidate> nmsResult = nonMaxSuppression(candidates, nmsIouThreshold, nmsIouThresholdSameClass);
         System.out.println("  NMS後の候補数: " + nmsResult.size());
+        
+        // 追加の重複除去：同じクラスで中心距離が近い場合も除去
+        nmsResult = removeNearbyDuplicates(nmsResult);
+        System.out.println("  重複除去後の候補数: " + nmsResult.size());
         
         // DetSymbolに変換（LabelMapを使用してクラスID → トークン変換）
         LabelMap labelMap = new LabelMap();
@@ -489,13 +494,17 @@ public class OnnxInference implements AutoCloseable {
     
     /**
      * NMS（Non-Maximum Suppression）実装
+     * 同じクラスの重複をより積極的に抑制する
      * 
      * @param candidates 検出候補リスト
-     * @param iouThreshold IoU閾値
+     * @param iouThreshold 異なるクラス間のIoU閾値
+     * @param iouThresholdSameClass 同じクラス間のIoU閾値（より厳しく）
      * @return NMS後の検出結果
      */
     private List<DetectionCandidate> nonMaxSuppression(
-            List<DetectionCandidate> candidates, double iouThreshold) {
+            List<DetectionCandidate> candidates, 
+            double iouThreshold, 
+            double iouThresholdSameClass) {
         
         if (candidates.isEmpty()) {
             return new ArrayList<>();
@@ -520,7 +529,12 @@ public class OnnxInference implements AutoCloseable {
                 DetectionCandidate other = candidates.get(j);
                 double iou = computeIoU(current.bbox, other.bbox);
                 
-                if (iou > iouThreshold) {
+                // 同じクラスの場合はより厳しい閾値を使用
+                double threshold = (current.classId == other.classId) 
+                    ? iouThresholdSameClass 
+                    : iouThreshold;
+                
+                if (iou > threshold) {
                     suppressed[j] = true;
                 }
             }
@@ -556,6 +570,67 @@ public class OnnxInference implements AutoCloseable {
     }
     
     /**
+     * 追加の重複除去：同じクラスで中心距離が近い場合も除去
+     * NMSを通過した後でも、同じクラスで非常に近い位置にある検出を除去
+     * 
+     * @param candidates NMS後の検出候補リスト
+     * @return 重複除去後の検出結果
+     */
+    private List<DetectionCandidate> removeNearbyDuplicates(List<DetectionCandidate> candidates) {
+        if (candidates.isEmpty()) {
+            return candidates;
+        }
+        
+        // スコアでソート（降順）
+        List<DetectionCandidate> sorted = new ArrayList<>(candidates);
+        sorted.sort((a, b) -> Double.compare(b.score, a.score));
+        
+        List<DetectionCandidate> result = new ArrayList<>();
+        boolean[] removed = new boolean[sorted.size()];
+        
+        for (int i = 0; i < sorted.size(); i++) {
+            if (removed[i]) continue;
+            
+            DetectionCandidate current = sorted.get(i);
+            result.add(current);
+            
+            // 同じクラスの候補をチェック
+            for (int j = i + 1; j < sorted.size(); j++) {
+                if (removed[j]) continue;
+                
+                DetectionCandidate other = sorted.get(j);
+                
+                // 同じクラスの場合のみチェック
+                if (current.classId == other.classId) {
+                    // 中心座標を計算
+                    double cx1 = (current.bbox.x1 + current.bbox.x2) / 2.0;
+                    double cy1 = (current.bbox.y1 + current.bbox.y2) / 2.0;
+                    double cx2 = (other.bbox.x1 + other.bbox.x2) / 2.0;
+                    double cy2 = (other.bbox.y1 + other.bbox.y2) / 2.0;
+                    
+                    // 中心間距離を計算
+                    double dx = cx2 - cx1;
+                    double dy = cy2 - cy1;
+                    double distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // 平均ボックスサイズを計算（小さい方のサイズを基準）
+                    double avgSize = Math.min(
+                        Math.min(current.bbox.w(), current.bbox.h()),
+                        Math.min(other.bbox.w(), other.bbox.h())
+                    );
+                    
+                    // 中心距離が平均サイズの30%以下なら重複とみなす
+                    if (distance < avgSize * 0.3) {
+                        removed[j] = true;
+                    }
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
      * 検出候補の内部クラス
      */
     private static class DetectionCandidate {
@@ -588,10 +663,17 @@ public class OnnxInference implements AutoCloseable {
     }
     
     /**
-     * NMS IoU閾値を設定
+     * NMS IoU閾値を設定（異なるクラス間）
      */
     public void setNmsIouThreshold(double threshold) {
         this.nmsIouThreshold = threshold;
+    }
+    
+    /**
+     * 同じクラス間のNMS IoU閾値を設定
+     */
+    public void setNmsIouThresholdSameClass(double threshold) {
+        this.nmsIouThresholdSameClass = threshold;
     }
 }
 

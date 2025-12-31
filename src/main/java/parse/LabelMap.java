@@ -38,9 +38,11 @@ public class LabelMap {
         // map.put("frac_bar", "FRAC_BAR");
         // みたいに内部トークンとして扱える
         
-        // クラスID → クラス名のマッピング（拡張版：約60クラス）
-        // 順序: 数字0-9, 演算子+,-,*,/,=, アルファベットa-z, 括弧(,),|, ギリシャ文字・定数π,θ,∞, 特殊記号→,√, 関数名
-        // Python側のclasses.pyと順序を一致させる必要がある
+        // クラスID → クラス名のマッピング（訓練時使用クラス：18クラス）
+        // 実際のモデル訓練で使用されたクラス順序に合わせる必要がある
+        // Kaggle Aida Calculus Math Handwriting Datasetで訓練されたモデルは18クラス（0-17）
+        // 順序: 数字0-9, 演算子+,-,*,/,=, 変数x, 括弧(,)
+        // OnnxInference.javaの括弧誤認識補正コード（bestClass == 16 && secondBestClass == 17）と一致
         idToClass = new String[]{
             // 数字（10クラス: 0-9）
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
@@ -48,35 +50,24 @@ public class LabelMap {
             // 基本演算子（5クラス: 10-14）
             "+", "-", "*", "/", "=",
             
-            // アルファベット変数（26クラス: 15-40）
-            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-            "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+            // 変数（1クラス: 15）
+            "x",
             
-            // 括弧類（3クラス: 41-43）
-            "(", ")", "|",
-            
-            // ギリシャ文字・定数（3クラス: 44-46）
-            "π", "θ", "∞",
-            // 注意: "e"（自然対数の底）はアルファベット変数の"e"と重複するため削除
-            
-            // 特殊記号（2クラス: 47-48）
-            "→", "√",
-            
-            // 関数名（12クラス: 49-60）
-            "sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "exp", "sqrt", "lim", "abs"
+            // 括弧（2クラス: 16-17）
+            "(", ")"
         };
-        // 合計61クラス（0-60）
+        // 合計18クラス（0-17）
     }
 
     /**
      * クラスIDからクラス名を取得
      * 
-     * @param classId クラスID（0-60）
-     * @return クラス名（例: "0", "+", "x", "π", "→", "sin", "lim"）
+     * @param classId クラスID（0-17）
+     * @return クラス名（例: "0", "+", "x", "(", ")"）
      */
     public String getClassLabel(int classId) {
         if (classId < 0 || classId >= idToClass.length) {
-            throw new IllegalArgumentException("Invalid class ID: " + classId);
+            throw new IllegalArgumentException("Invalid class ID: " + classId + " (valid range: 0-" + (idToClass.length - 1) + ")");
         }
         return idToClass[classId];
     }
