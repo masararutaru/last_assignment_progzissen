@@ -200,17 +200,47 @@ public class SpatialToExpr {
             i++;
         }
         
+        // デバッグ情報: べき乗処理後のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("^") || t.equals("/"))) {
+            warnings.add("べき乗処理後のトークン列: " + String.join(" ", tokens));
+        }
+        
         // 5) ルート記号の処理（√記号の直後の式を括弧で囲む）
         tokens = processSqrtSymbols(tokens, tokenSymbols, warnings);
+        
+        // デバッグ情報: ルート処理後のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("sqrt") || t.equals("√"))) {
+            warnings.add("ルート処理後のトークン列: " + String.join(" ", tokens));
+        }
         
         // 6) 絶対値の処理（|...|をabs(...)に変換）
         tokens = processAbsoluteValue(tokens, warnings);
         
+        // デバッグ情報: 絶対値処理後のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("abs") || t.equals("|"))) {
+            warnings.add("絶対値処理後のトークン列: " + String.join(" ", tokens));
+        }
+        
         // 7) 微分演算子の処理（d/dx構造を検出）- 分数処理の前に実行してd/dxパターンを保護
         tokens = processDerivatives(tokens, warnings);
         
+        // デバッグ情報: 微分処理後のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("diff"))) {
+            warnings.add("微分処理後のトークン列: " + String.join(" ", tokens));
+        }
+        
         // 8) 極限の処理（lim_{x→a}構造を検出）- 分数処理の前に実行してlimパターンを保護
         tokens = processLimits(tokens, tokenSymbols, warnings);
+        
+        // デバッグ情報: 極限処理後のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("lim") || t.equals("limit"))) {
+            warnings.add("極限処理後のトークン列: " + String.join(" ", tokens));
+        }
+        
+        // デバッグ情報: 分数処理前のトークン列を表示（正しい位置）
+        if (tokens.stream().anyMatch(t -> t.equals("/"))) {
+            warnings.add("分数処理前のトークン列: " + String.join(" ", tokens));
+        }
         
         // 9) 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
         // 注意: 微分や極限の処理の後に実行することで、d/dxやlimパターンが分数として誤認識されるのを防ぐ
@@ -250,11 +280,6 @@ public class SpatialToExpr {
 
         // 12) 文字列化
         String expr = String.join("", withMul);
-        
-        // デバッグ情報: 分数処理前のトークン列を表示
-        if (tokens.stream().anyMatch(t -> t.equals("/"))) {
-            warnings.add("分数処理前のトークン列: " + String.join(" ", tokens));
-        }
 
         // 13) ちょいデバッグしやすく
         if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
@@ -366,47 +391,57 @@ public class SpatialToExpr {
             }
         }
         
-        // ペアを見つけてabs(...)に変換
-        boolean[] used = new boolean[tokens.size()];
-        for (int i = 0; i < absPositions.size(); i++) {
-            int openIdx = absPositions.get(i);
-            if (used[openIdx]) continue;
-            
-            // 対応する閉じ|を探す
-            int closeIdx = -1;
-            for (int j = i + 1; j < absPositions.size(); j++) {
-                int candidateIdx = absPositions.get(j);
-                if (!used[candidateIdx]) {
-                    closeIdx = candidateIdx;
-                    break;
-                }
-            }
-            
-            if (closeIdx > openIdx) {
-                // abs(...)に変換
-                used[openIdx] = true;
-                used[closeIdx] = true;
-                
-                // トークンを変換
-                for (int k = 0; k < tokens.size(); k++) {
-                    if (k == openIdx) {
-                        result.add("abs");
-                        result.add("(");
-                    } else if (k == closeIdx) {
-                        result.add(")");
-                    } else if (!used[k] || (k > openIdx && k < closeIdx)) {
-                        result.add(tokens.get(k));
-                    }
-                }
-            }
-        }
-        
         // ペアが見つからなかった場合はそのまま
-        if (result.isEmpty()) {
+        if (absPositions.size() < 2) {
             return tokens;
         }
         
-        return result;
+        // ペアを見つけてabs(...)に変換
+        boolean[] used = new boolean[tokens.size()];
+        
+        for (int i = 0; i < tokens.size(); i++) {
+            if (used[i]) continue;
+            
+            String token = tokens.get(i);
+            
+            // 絶対値記号|を検出
+            if (token.equals("|")) {
+                // 対応する閉じ|を探す
+                int closeIdx = -1;
+                for (int j = i + 1; j < tokens.size(); j++) {
+                    if (tokens.get(j).equals("|") && !used[j]) {
+                        closeIdx = j;
+                        break;
+                    }
+                }
+                
+                if (closeIdx > i) {
+                    // abs(...)に変換
+                    result.add("abs");
+                    result.add("(");
+                    // 絶対値の内部のトークンを追加
+                    for (int k = i + 1; k < closeIdx; k++) {
+                        result.add(tokens.get(k));
+                    }
+                    result.add(")");
+                    used[i] = true;
+                    used[closeIdx] = true;
+                    // 内部のトークンも使用済みとしてマーク（重複追加を防ぐ）
+                    for (int k = i + 1; k < closeIdx; k++) {
+                        used[k] = true;
+                    }
+                    i = closeIdx; // ループでi++されるので、closeIdxまでスキップ
+                    continue;
+                }
+            }
+            
+            // 使用されていないトークンはそのまま追加
+            if (!used[i]) {
+                result.add(token);
+            }
+        }
+        
+        return result.isEmpty() ? tokens : result;
     }
     
     /**
