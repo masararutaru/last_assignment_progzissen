@@ -452,9 +452,18 @@ public class SpatialToExpr {
         if (a.equals("+") || a.equals("-") || a.equals("*") || a.equals("/") || a.equals("^")) return false;
         if (b.equals("+") || b.equals("-") || b.equals("*") || b.equals("/") || b.equals("^")) return false;
 
-        // 括弧の前後では掛け算を入れない
-        if (a.equals("(") || b.equals("(")) return false;  // 開き括弧の前後では掛け算を入れない
-        if (a.equals(")") || b.equals(")")) return false;  // 閉じ括弧の前後では掛け算を入れない
+        // 括弧の処理：条件付きで掛け算を入れる
+        // ) の右側に数字や変数が来る場合: (-5)2 → (-5)*2
+        if (a.equals(")") && (isNumberLike(b) || isVariable(b))) {
+            return true;
+        }
+        // ( の左側に数字や変数がある場合: 2(x+1) → 2*(x+1)
+        if (b.equals("(") && (isNumberLike(a) || isVariable(a))) {
+            return true;
+        }
+        // それ以外の括弧の前後では掛け算を入れない
+        if (a.equals("(") || b.equals("(")) return false;
+        if (a.equals(")") || b.equals(")")) return false;
 
         // 例: "sin" "(" は掛け算じゃない（関数呼び出し）
         if (isFunc(a) && b.equals("(")) return false;
@@ -465,7 +474,7 @@ public class SpatialToExpr {
             return false;
         }
 
-        // 例: ")" "(" → * を入れる（ただし上で既に除外されている）
+        // 例: ")" "(" → * を入れる
         return isAtomEnd(a) && isAtomStart(b);
     }
 
