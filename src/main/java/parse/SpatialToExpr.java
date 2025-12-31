@@ -227,18 +227,51 @@ public class SpatialToExpr {
         List<String> correctedParens = fixParenMismatch(tokens, tokenSymbols, warnings);
 
         // 11) 暗黙の掛け算を挿入（めちゃ大事）
+        // 分数のパターン (分子)/(分母) を検出して、その前後では暗黙の掛け算を挿入しない
         List<String> withMul = new ArrayList<>();
         for (int k = 0; k < correctedParens.size(); k++) {
             String a = correctedParens.get(k);
             withMul.add(a);
             if (k + 1 < correctedParens.size()) {
                 String b = correctedParens.get(k + 1);
-                // tokenSymbolsのインデックスは元のtokensに対応しているため、調整が必要
-                // 簡易的にはnullを渡す（位置情報は使わない）
-                DetSymbol symA = null;
-                DetSymbol symB = null;
-                if (needImplicitMul(a, b, symA, symB)) {
-                    withMul.add("*");
+                
+                // 分数のパターン (分子)/(分母) を検出
+                // パターン: ) / ( を見つける
+                // 分数の前（分数の開始位置より前）では暗黙の掛け算を挿入しない
+                boolean isBeforeFraction = false;
+                // 例: 2 ( 4 ) / ( 20 ) の場合、2 と ( の間では暗黙の掛け算を挿入しない
+                // 分数のパターンを検出: ( ... ) / ( ... )
+                if (b.equals("(")) {
+                    // この ( が分数の開始位置かチェック
+                    // 分数のパターン: ( ... ) / ( ... )
+                    int parenCount = 0;
+                    int j = k + 1;
+                    while (j < correctedParens.size()) {
+                        String tok = correctedParens.get(j);
+                        if (tok.equals("(")) parenCount++;
+                        if (tok.equals(")")) {
+                            parenCount--;
+                            if (parenCount == 0) {
+                                // 対応する ) が見つかった
+                                if (j + 1 < correctedParens.size() && correctedParens.get(j + 1).equals("/")) {
+                                    // 分数のパターンが見つかった
+                                    isBeforeFraction = true;
+                                }
+                                break;
+                            }
+                        }
+                        j++;
+                    }
+                }
+                
+                if (!isBeforeFraction) {
+                    // tokenSymbolsのインデックスは元のtokensに対応しているため、調整が必要
+                    // 簡易的にはnullを渡す（位置情報は使わない）
+                    DetSymbol symA = null;
+                    DetSymbol symB = null;
+                    if (needImplicitMul(a, b, symA, symB)) {
+                        withMul.add("*");
+                    }
                 }
             }
         }
