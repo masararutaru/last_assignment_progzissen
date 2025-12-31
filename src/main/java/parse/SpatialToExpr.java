@@ -452,6 +452,10 @@ public class SpatialToExpr {
         if (a.equals("+") || a.equals("-") || a.equals("*") || a.equals("/") || a.equals("^")) return false;
         if (b.equals("+") || b.equals("-") || b.equals("*") || b.equals("/") || b.equals("^")) return false;
 
+        // 括弧の前後では掛け算を入れない
+        if (a.equals("(") || b.equals("(")) return false;  // 開き括弧の前後では掛け算を入れない
+        if (a.equals(")") || b.equals(")")) return false;  // 閉じ括弧の前後では掛け算を入れない
+
         // 例: "sin" "(" は掛け算じゃない（関数呼び出し）
         if (isFunc(a) && b.equals("(")) return false;
         if (a.equals("sqrt") && b.equals("(")) return false;
@@ -469,7 +473,7 @@ public class SpatialToExpr {
             }
         }
 
-        // 例: ")" "(" → * を入れる
+        // 例: ")" "(" → * を入れる（ただし上で既に除外されている）
         return isAtomEnd(a) && isAtomStart(b);
     }
 
