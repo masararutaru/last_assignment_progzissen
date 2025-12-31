@@ -511,6 +511,7 @@ public class SpatialToExpr {
         // 最大で10回まで修正を試みる（無限ループ防止）
         int maxIterations = 10;
         int iteration = 0;
+        Set<Integer> fixedPositions = new HashSet<>(); // 修正済み位置を記録
         
         while (iteration < maxIterations) {
             // 括弧のバランスを計算
@@ -554,6 +555,14 @@ public class SpatialToExpr {
                 // 左から右に走査して、対応する開き括弧がない閉じ括弧を開き括弧に修正
                 int mismatchBalance = 0;
                 for (int i = 0; i < result.size(); i++) {
+                    // 既に修正済みの位置はスキップ
+                    if (fixedPositions.contains(i)) {
+                        String token = result.get(i);
+                        if (token.equals("(")) mismatchBalance++;
+                        else if (token.equals(")")) mismatchBalance--;
+                        continue;
+                    }
+                    
                     String token = result.get(i);
                     if (token.equals("(")) {
                         mismatchBalance++;
@@ -561,6 +570,7 @@ public class SpatialToExpr {
                         if (mismatchBalance <= 0) {
                             // 対応する開き括弧がない閉じ括弧を開き括弧に修正
                             result.set(i, "(");
+                            fixedPositions.add(i);
                             fixed = true;
                             warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d、対応関係修正）", i));
                             break; // 1つずつ修正
@@ -574,6 +584,14 @@ public class SpatialToExpr {
                 if (!fixed) {
                     mismatchBalance = 0;
                     for (int i = result.size() - 1; i >= 0; i--) {
+                        // 既に修正済みの位置はスキップ
+                        if (fixedPositions.contains(i)) {
+                            String token = result.get(i);
+                            if (token.equals(")")) mismatchBalance++;
+                            else if (token.equals("(")) mismatchBalance--;
+                            continue;
+                        }
+                        
                         String token = result.get(i);
                         if (token.equals(")")) {
                             mismatchBalance++;
@@ -581,6 +599,7 @@ public class SpatialToExpr {
                             if (mismatchBalance <= 0) {
                                 // 対応する閉じ括弧がない開き括弧を閉じ括弧に修正
                                 result.set(i, ")");
+                                fixedPositions.add(i);
                                 fixed = true;
                                 warnings.add(String.format("括弧の対応を修正: 未対応の(を)に変更（位置%d、対応関係修正）", i));
                                 break; // 1つずつ修正
@@ -599,15 +618,24 @@ public class SpatialToExpr {
                 // 優先度1: 左から右に走査して、連続する((の後半を)に修正（最も確実）
                 int parenBalance = 0;
                 for (int i = 0; i < result.size() && fixedCount < excess; i++) {
+                    // 既に修正済みの位置はスキップ
+                    if (fixedPositions.contains(i)) {
+                        String token = result.get(i);
+                        if (token.equals("(")) parenBalance++;
+                        else if (token.equals(")")) parenBalance--;
+                        continue;
+                    }
+                    
                     String token = result.get(i);
                     
                     if (token.equals("(")) {
                         parenBalance++;
                         
                         // 次のトークンも(で、かつ括弧のバランスが1以上（開き括弧が余っている）場合
-                        if (i + 1 < result.size() && result.get(i + 1).equals("(") && parenBalance > 0) {
+                        if (i + 1 < result.size() && result.get(i + 1).equals("(") && !fixedPositions.contains(i + 1) && parenBalance > 0) {
                             // 後半の(を)に修正
                             result.set(i + 1, ")");
+                            fixedPositions.add(i + 1);
                             fixedCount++;
                             parenBalance--;  // 修正したのでバランスを調整
                             warnings.add(String.format("括弧の対応を修正: 連続する((の後半を)に変更（位置%d）", i + 1));
@@ -625,6 +653,14 @@ public class SpatialToExpr {
                 if (fixedCount < excess) {
                     parenBalance = 0;
                     for (int i = result.size() - 1; i >= 0 && fixedCount < excess; i--) {
+                        // 既に修正済みの位置はスキップ
+                        if (fixedPositions.contains(i)) {
+                            String token = result.get(i);
+                            if (token.equals(")")) parenBalance++;
+                            else if (token.equals("(")) parenBalance--;
+                            continue;
+                        }
+                        
                         String token = result.get(i);
                         
                         if (token.equals(")")) {
@@ -633,6 +669,7 @@ public class SpatialToExpr {
                             if (parenBalance == 0 && fixedCount < excess) {
                                 // 対応する閉じ括弧がない開き括弧を閉じ括弧に修正
                                 result.set(i, ")");
+                                fixedPositions.add(i);
                                 fixedCount++;
                                 warnings.add(String.format("括弧の対応を修正: 未対応の(を)に変更（位置%d、右から）", i));
                             } else {
@@ -653,6 +690,14 @@ public class SpatialToExpr {
                 // 優先度1: 左から右に走査して、連続する))の前半を(に修正（最も確実）
                 int parenBalance = 0;
                 for (int i = 0; i < result.size() && fixedCount < excess; i++) {
+                    // 既に修正済みの位置はスキップ
+                    if (fixedPositions.contains(i)) {
+                        String token = result.get(i);
+                        if (token.equals("(")) parenBalance++;
+                        else if (token.equals(")")) parenBalance--;
+                        continue;
+                    }
+                    
                     String token = result.get(i);
                     
                     if (token.equals("(")) {
@@ -664,12 +709,14 @@ public class SpatialToExpr {
                             if (i + 1 < result.size() && result.get(i + 1).equals(")") && fixedCount < excess) {
                                 // 前半の)を(に修正
                                 result.set(i, "(");
+                                fixedPositions.add(i);
                                 fixedCount++;
                                 parenBalance++;  // 修正したのでバランスを調整
                                 warnings.add(String.format("括弧の対応を修正: 連続する))の前半を(に変更（位置%d）", i));
                             } else if (fixedCount < excess) {
                                 // 単独の未対応の)を(に修正
                                 result.set(i, "(");
+                                fixedPositions.add(i);
                                 fixedCount++;
                                 parenBalance++;
                                 warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d）", i));
