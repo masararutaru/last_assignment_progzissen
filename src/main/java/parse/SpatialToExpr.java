@@ -215,6 +215,11 @@ public class SpatialToExpr {
         // 9) 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
         // 注意: 微分や極限の処理の後に実行することで、d/dxやlimパターンが分数として誤認識されるのを防ぐ
         tokens = processFractions(tokens, tokenSymbols, warnings);
+        
+        // デバッグ情報: 分数処理後のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("/") || t.contains("("))) {
+            warnings.add("分数処理後のトークン列: " + String.join(" ", tokens));
+        }
 
         // 10) 括弧の対応を修正（)が(に誤認識される問題に対処）
         // 暗黙の掛け算を挿入する前に括弧の対応を修正する必要がある
@@ -236,6 +241,11 @@ public class SpatialToExpr {
                     withMul.add("*");
                 }
             }
+        }
+        
+        // デバッグ情報: 暗黙の掛け算処理後のトークン列を表示
+        if (withMul.stream().anyMatch(t -> t.equals("*") || t.contains("("))) {
+            warnings.add("暗黙の掛け算処理後のトークン列: " + String.join(" ", withMul));
         }
 
         // 12) 文字列化
@@ -437,7 +447,8 @@ public class SpatialToExpr {
                 List<Integer> denominatorIndices = new ArrayList<>();
                 
                 // 分数線のx座標範囲を拡張（左右のマージンを考慮）
-                double margin = fracLine.w() * 1.5; // マージンを広めに設定
+                // マージンを小さくして、分数線の外側の数字を除外
+                double margin = fracLine.w() * 0.5; // マージンを小さく設定
                 double fracLeft = fracLine.x1 - margin;
                 double fracRight = fracLine.x2 + margin;
                 
@@ -472,15 +483,21 @@ public class SpatialToExpr {
                         
                         // 分子の判定：分数線の上にある（分数線の下端より上）
                         // より柔軟に：分数線の中心より上で、かつ分数線と重ならない
-                        if (otherBottom < fracTop - threshold || 
-                            (otherCenterY < fracCenterY - threshold && otherBottom < fracTop)) {
+                        // さらに、分数線の上端から一定距離以上離れている必要がある
+                        double numeratorThreshold = Math.max(fracLine.h() * 0.5, 10.0);
+                        if (otherBottom < fracTop - numeratorThreshold || 
+                            (otherCenterY < fracCenterY - threshold && otherBottom < fracTop - threshold)) {
                             numeratorIndices.add(j);
                         }
                         // 分母の判定：分数線の下にある（分数線の上端より下）
                         // より柔軟に：分数線の中心より下で、かつ分数線と重ならない
-                        else if (otherTop > fracBottom + threshold || 
-                                 (otherCenterY > fracCenterY + threshold && otherTop > fracBottom)) {
-                            denominatorIndices.add(j);
+                        // さらに、分数線の下端から一定距離以上離れている必要がある
+                        else {
+                            double denominatorThreshold = Math.max(fracLine.h() * 0.5, 10.0);
+                            if (otherTop > fracBottom + denominatorThreshold || 
+                                (otherCenterY > fracCenterY + threshold && otherTop > fracBottom + threshold)) {
+                                denominatorIndices.add(j);
+                            }
                         }
                     }
                 }
