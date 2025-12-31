@@ -105,6 +105,14 @@ public class SpatialToExpr {
         
         // 4) トークン列にしつつ、べき(右上)をまとめる
         // トークンとDetSymbolの対応を保持（数字の連続判定のため）
+        // まず、分数線（/）の位置を記録（べき乗処理で分数線の上下のシンボルをべき乗として扱わないため）
+        List<Integer> fractionLineIndices = new ArrayList<>();
+        for (int k = 0; k < merged.size(); k++) {
+            if (merged.get(k).token.equals("/")) {
+                fractionLineIndices.add(k);
+            }
+        }
+        
         List<String> tokens = new ArrayList<>();
         List<DetSymbol> tokenSymbols = new ArrayList<>(); // 各トークンに対応するDetSymbol（null可）
         int i = 0;
@@ -115,37 +123,77 @@ public class SpatialToExpr {
             tokenSymbols.add(cur);
 
             // exponent判定：次が "右上に小さい塊" なら ^( ... ) を挿入
+            // ただし、分数線の上下にあるシンボルはべき乗として扱わない
             if (i + 1 < merged.size()) {
                 DetSymbol nxt = merged.get(i + 1);
-                if (looksLikeSuperscript(cur, nxt)) {
+                // 分数線の上下にあるシンボルかチェック
+                boolean isNearFractionLine = false;
+                for (int fracIdx : fractionLineIndices) {
+                    DetSymbol fracLine = merged.get(fracIdx);
+                    // 分数線のx座標範囲内で、y座標が分数線の上下にあるかチェック
+                    double margin = fracLine.box.w() * 1.5;
+                    double fracLeft = fracLine.box.x1 - margin;
+                    double fracRight = fracLine.box.x2 + margin;
+                    double threshold = Math.max(fracLine.box.h() * 0.3, 5.0);
+                    
+                    // 現在のシンボルまたは次のシンボルが分数線の上下にあるか
+                    if ((cur.box.cx() >= fracLeft && cur.box.cx() <= fracRight &&
+                         (cur.box.cy() < fracLine.box.cy() - threshold || cur.box.cy() > fracLine.box.cy() + threshold)) ||
+                        (nxt.box.cx() >= fracLeft && nxt.box.cx() <= fracRight &&
+                         (nxt.box.cy() < fracLine.box.cy() - threshold || nxt.box.cy() > fracLine.box.cy() + threshold))) {
+                        isNearFractionLine = true;
+                        break;
+                    }
+                }
+                
+                if (!isNearFractionLine && looksLikeSuperscript(cur, nxt)) {
                     // superscript は "連続する限り" まとめる（例: x^(12))
                     List<DetSymbol> sup = new ArrayList<>();
                     int j = i + 1;
                     while (j < merged.size() && looksLikeSuperscript(cur, merged.get(j))) {
+                        // 分数線の上下にあるシンボルはべき乗として扱わない
+                        boolean isSupNearFractionLine = false;
+                        for (int fracIdx : fractionLineIndices) {
+                            DetSymbol fracLine = merged.get(fracIdx);
+                            double margin = fracLine.box.w() * 1.5;
+                            double fracLeft = fracLine.box.x1 - margin;
+                            double fracRight = fracLine.box.x2 + margin;
+                            double threshold = Math.max(fracLine.box.h() * 0.3, 5.0);
+                            
+                            if (merged.get(j).box.cx() >= fracLeft && merged.get(j).box.cx() <= fracRight &&
+                                (merged.get(j).box.cy() < fracLine.box.cy() - threshold || 
+                                 merged.get(j).box.cy() > fracLine.box.cy() + threshold)) {
+                                isSupNearFractionLine = true;
+                                break;
+                            }
+                        }
+                        if (isSupNearFractionLine) break;
                         sup.add(merged.get(j));
                         j++;
                     }
                     
-                    // 複数の exponent 候補があった場合の警告
-                    if (sup.size() > 1) {
-                        warnings.add(String.format("複数の指数候補が検出されました (%d個のシンボル)、すべて使用します", 
-                                sup.size()));
+                    if (!sup.isEmpty()) {
+                        // 複数の exponent 候補があった場合の警告
+                        if (sup.size() > 1) {
+                            warnings.add(String.format("複数の指数候補が検出されました (%d個のシンボル)、すべて使用します", 
+                                    sup.size()));
+                        }
+                        
+                        sup.sort(Comparator.comparingDouble(a -> a.box.cx()));
+                        String supStr = sup.stream().map(x -> x.token).collect(Collectors.joining());
+
+                        tokens.add("^");
+                        tokenSymbols.add(null);
+                        tokens.add("(");
+                        tokenSymbols.add(null);
+                        tokens.add(supStr);
+                        tokenSymbols.add(null); // 複数シンボルの合成なのでnull
+                        tokens.add(")");
+                        tokenSymbols.add(null);
+
+                        i = j;
+                        continue;
                     }
-                    
-                    sup.sort(Comparator.comparingDouble(a -> a.box.cx()));
-                    String supStr = sup.stream().map(x -> x.token).collect(Collectors.joining());
-
-                    tokens.add("^");
-                    tokenSymbols.add(null);
-                    tokens.add("(");
-                    tokenSymbols.add(null);
-                    tokens.add(supStr);
-                    tokenSymbols.add(null); // 複数シンボルの合成なのでnull
-                    tokens.add(")");
-                    tokenSymbols.add(null);
-
-                    i = j;
-                    continue;
                 }
             }
 
