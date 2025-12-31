@@ -507,7 +507,7 @@ public class SpatialToExpr {
             if (token.equals(")")) closeCount++;
         }
         
-        // 開き括弧が余っている場合のみ修正
+        // 開き括弧が余っている場合の修正
         if (openCount > closeCount) {
             int excess = openCount - closeCount;
             
@@ -532,7 +532,6 @@ public class SpatialToExpr {
                 } else if (token.equals(")")) {
                     parenBalance--;
                     if (parenBalance < 0) {
-                        // 閉じ括弧が多すぎる場合は開き括弧に修正（逆パターン）
                         parenBalance = 0;
                     }
                 }
@@ -552,6 +551,52 @@ public class SpatialToExpr {
                             result.set(i, ")");
                             fixedCount++;
                             warnings.add(String.format("括弧の対応を修正: 位置%dの(を)に変更（右から）", i));
+                        } else {
+                            parenBalance--;
+                        }
+                    }
+                }
+            }
+        }
+        // 閉じ括弧が余っている場合の修正
+        else if (closeCount > openCount) {
+            int excess = closeCount - openCount;
+            int fixedCount = 0;
+            
+            // 左から右に走査して、対応する開き括弧がない閉じ括弧を開き括弧に修正
+            int parenBalance = 0;
+            for (int i = 0; i < result.size() && fixedCount < excess; i++) {
+                String token = result.get(i);
+                
+                if (token.equals("(")) {
+                    parenBalance++;
+                } else if (token.equals(")")) {
+                    if (parenBalance <= 0 && fixedCount < excess) {
+                        // 対応する開き括弧がない閉じ括弧を開き括弧に修正
+                        result.set(i, "(");
+                        fixedCount++;
+                        parenBalance++;
+                        warnings.add(String.format("括弧の対応を修正: 位置%dの)を(に変更", i));
+                    } else {
+                        parenBalance--;
+                    }
+                }
+            }
+            
+            // まだ余っている場合、右から左に走査して修正
+            if (fixedCount < excess) {
+                parenBalance = 0;
+                for (int i = result.size() - 1; i >= 0 && fixedCount < excess; i--) {
+                    String token = result.get(i);
+                    
+                    if (token.equals("(")) {
+                        parenBalance++;
+                    } else if (token.equals(")")) {
+                        if (parenBalance == 0 && fixedCount < excess) {
+                            // 対応する開き括弧がない閉じ括弧を開き括弧に修正
+                            result.set(i, "(");
+                            fixedCount++;
+                            warnings.add(String.format("括弧の対応を修正: 位置%dの)を(に変更（右から）", i));
                         } else {
                             parenBalance--;
                         }
