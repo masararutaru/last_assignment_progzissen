@@ -575,6 +575,35 @@ public class SpatialToExpr {
                     result.add(")");
                     
                     used[i] = true;
+                    
+                    // 分数線の前後にある数字で、分数線の範囲外にあるものを除外
+                    // これにより、分数線の外側の数字（例: 1, 3, 1 4）が結果に追加されなくなる
+                    // x座標とy座標の両方を考慮して、分数線の範囲外にある数字のみを除外
+                    for (int j = 0; j < tokens.size(); j++) {
+                        if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
+                        
+                        DetSymbol otherSymbol = tokenSymbols.get(j);
+                        BBox otherBox = otherSymbol.box;
+                        String otherToken = tokens.get(j);
+                        
+                        // 数字のみをチェック
+                        if (!isNumberLike(otherToken)) continue;
+                        
+                        // 分数線のx座標範囲外にある数字をチェック
+                        double otherCenterX = otherBox.cx();
+                        double otherCenterY = otherBox.cy();
+                        
+                        // 分数線の範囲外にある数字で、かつ分数線のy座標範囲外にある数字を除外
+                        // これにより、分数線の外側の数字（例: 1, 3, 1 4）が結果に追加されなくなる
+                        boolean isOutsideX = (otherCenterX < fracLeft || otherCenterX > fracRight);
+                        boolean isOutsideY = (otherCenterY < fracTop - threshold * 2 || otherCenterY > fracBottom + threshold * 2);
+                        
+                        if (isOutsideX && isOutsideY) {
+                            // 分数線の範囲外にある数字は除外（usedにマークするが、結果には追加しない）
+                            used[j] = true;
+                        }
+                    }
+                    
                     continue;
                 }
             }
