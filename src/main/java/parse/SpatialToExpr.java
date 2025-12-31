@@ -192,6 +192,11 @@ public class SpatialToExpr {
 
         // 12) 文字列化
         String expr = String.join("", withMul);
+        
+        // デバッグ情報: 分数処理前のトークン列を表示
+        if (tokens.stream().anyMatch(t -> t.equals("/"))) {
+            warnings.add("分数処理前のトークン列: " + String.join(" ", tokens));
+        }
 
         // 13) ちょいデバッグしやすく
         if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
@@ -443,6 +448,27 @@ public class SpatialToExpr {
                         DetSymbol s = tokenSymbols.get(idx);
                         return s != null ? (int)(s.box.cx() * 1000) : 0;
                     }));
+                    
+                    // デバッグ情報を追加
+                    StringBuilder debugInfo = new StringBuilder();
+                    debugInfo.append("分数処理: 分子=");
+                    if (numeratorIndices.isEmpty()) {
+                        debugInfo.append("なし");
+                    } else {
+                        for (int idx : numeratorIndices) {
+                            debugInfo.append(tokens.get(idx)).append("(").append(String.format("%.1f", tokenSymbols.get(idx).box.cy())).append(") ");
+                        }
+                    }
+                    debugInfo.append(", 分母=");
+                    if (denominatorIndices.isEmpty()) {
+                        debugInfo.append("なし");
+                    } else {
+                        for (int idx : denominatorIndices) {
+                            debugInfo.append(tokens.get(idx)).append("(").append(String.format("%.1f", tokenSymbols.get(idx).box.cy())).append(") ");
+                        }
+                    }
+                    debugInfo.append(", 分数線y=").append(String.format("%.1f", fracCenterY));
+                    warnings.add(debugInfo.toString());
                     
                     // 分子のトークンを集める
                     StringBuilder numerator = new StringBuilder();
