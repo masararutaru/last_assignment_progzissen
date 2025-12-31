@@ -30,11 +30,15 @@ public class MathExpressionGUI extends Frame implements ActionListener {
     private DrawingCanvas drawingCanvas;
     private TextArea resultArea;
     private ScrollPane resultScrollPane;
+    private Panel variableInputPanel;
     
     // データ
     private OnnxInference inference;
     private Detection lastDetection;  // 最後の推論結果を保持
     private BufferedImage lastCanvasImage;  // 最後のキャンバス画像を保持
+    private VariableContext variableContext;
+    private java.util.Map<String, TextField> variableFields;
+    private Expr lastParsedExpr;  // 最後にパースした式を保持
     
     public static void main(String[] args) {
         new MathExpressionGUI();
@@ -83,6 +87,13 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         drawingCanvas = new DrawingCanvas();
         this.add(drawingCanvas, BorderLayout.CENTER);
         
+        // 変数コンテキストと変数入力パネルを初期化
+        variableContext = new VariableContext();
+        variableFields = new java.util.HashMap<>();
+        variableInputPanel = new Panel();
+        variableInputPanel.setLayout(new GridBagLayout());
+        variableInputPanel.setPreferredSize(new Dimension(800, 200));
+        
         // 結果表示エリア（右側）- 大きく、フォントも大きく
         resultArea = new TextArea("", 50, 150, TextArea.SCROLLBARS_VERTICAL_ONLY);
         resultArea.setEditable(false);
@@ -91,7 +102,13 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         resultScrollPane.add(resultArea);
         // 推論結果エリアをより大きく表示するため、幅を指定
         resultScrollPane.setPreferredSize(new Dimension(800, 0));
-        this.add(resultScrollPane, BorderLayout.EAST);
+        
+        // 結果表示エリアと変数入力パネルをまとめるパネル
+        Panel rightPanel = new Panel();
+        rightPanel.setLayout(new BorderLayout());
+        rightPanel.add(resultScrollPane, BorderLayout.CENTER);
+        rightPanel.add(variableInputPanel, BorderLayout.SOUTH);
+        this.add(rightPanel, BorderLayout.EAST);
         
         // ウィンドウクローズ処理
         this.addWindowListener(new WindowAdapter() {
@@ -254,18 +271,36 @@ public class MathExpressionGUI extends Frame implements ActionListener {
                     resultArea.append("✓ パース成功\n");
                     resultArea.append("式: " + inferredExpr + "\n\n");
                     
-                    // 4. 計算結果（x=1.0で評価）
-                    // 式にxが含まれているかチェック
-                    boolean hasX = inferredExpr.contains("x");
-                    double x = 1.0;
-                    double value = expr.eval(x);
+                    // 4. 計算結果（変数入力対応版）
+                    // 式に含まれる変数を抽出
+                    java.util.Set<String> variables = VariableExtractor.extractVariables(expr);
+                    lastParsedExpr = expr;  // 式を保持
+                    
+                    // 変数入力パネルを更新
+                    updateVariableInputPanel(variables);
+                    
+                    // 変数コンテキストを更新
+                    updateVariableContext();
+                    
+                    // 変数コンテキストをSymに設定
+                    Sym.setGlobalContext(variableContext);
+                    
+                    // 計算実行（xパラメータは使用しないが、互換性のため残す）
+                    double value = expr.eval(1.0);
+                    
                     resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【計算結果】\n");
                     resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-                    if (hasX) {
-                        resultArea.append("x = " + x + " のとき\n");
+                    
+                    if (!variables.isEmpty()) {
+                        resultArea.append("変数の値:\n");
+                        for (String varName : variables) {
+                            double varValue = variableContext.getVariable(varName);
+                            resultArea.append("  " + varName + " = " + varValue + "\n");
+                        }
+                        resultArea.append("\n");
                     }
-                    resultArea.append("\n");
+                    
                     resultArea.append("答え = " + value + "\n\n");
                     
                 } catch (Exception parseEx) {
@@ -393,6 +428,141 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         });
         
         detectionFrame.setVisible(true);
+    }
+    
+    /**
+     * 変数入力パネルを更新
+     */
+    private void updateVariableInputPanel(java.util.Set<String> variables) {
+        variableInputPanel.removeAll();
+        variableFields.clear();
+        
+        if (variables.isEmpty()) {
+            Label noVarLabel = new Label("変数はありません");
+            noVarLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+            variableInputPanel.add(noVarLabel);
+        } else {
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(5, 5, 5, 5);
+            gbc.anchor = GridBagConstraints.WEST;
+            
+            Label titleLabel = new Label("変数の値を入力してください（デフォルト: 1.0）:");
+            titleLabel.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            gbc.gridwidth = 2;
+            variableInputPanel.add(titleLabel, gbc);
+            
+            int row = 1;
+            for (String varName : variables) {
+                Label varLabel = new Label(varName + " =");
+                varLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+                gbc.gridx = 0;
+                gbc.gridy = row;
+                gbc.gridwidth = 1;
+                variableInputPanel.add(varLabel, gbc);
+                
+                TextField varField = new TextField("1.0", 10);
+                varField.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+                varField.addActionListener(e -> {
+                    updateVariableContext();
+                    recalculateResult();
+                });
+                varField.addFocusListener(new FocusAdapter() {
+                    @Override
+                    public void focusLost(FocusEvent e) {
+                        updateVariableContext();
+                        recalculateResult();
+                    }
+                });
+                gbc.gridx = 1;
+                gbc.gridy = row;
+                variableInputPanel.add(varField, gbc);
+                
+                variableFields.put(varName, varField);
+                row++;
+            }
+            
+            Button recalcButton = new Button("再計算");
+            recalcButton.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
+            recalcButton.addActionListener(e -> {
+                updateVariableContext();
+                recalculateResult();
+            });
+            gbc.gridx = 0;
+            gbc.gridy = row;
+            gbc.gridwidth = 2;
+            variableInputPanel.add(recalcButton, gbc);
+        }
+        
+        variableInputPanel.validate();
+        variableInputPanel.repaint();
+    }
+    
+    /**
+     * 変数コンテキストを更新
+     */
+    private void updateVariableContext() {
+        variableContext.clear();
+        for (java.util.Map.Entry<String, TextField> entry : variableFields.entrySet()) {
+            String varName = entry.getKey();
+            String valueStr = entry.getValue().getText();
+            try {
+                double value = Double.parseDouble(valueStr);
+                variableContext.setVariable(varName, value);
+            } catch (NumberFormatException e) {
+                // 無効な値の場合はデフォルト値1.0を使用
+                variableContext.setVariable(varName, 1.0);
+            }
+        }
+    }
+    
+    /**
+     * 計算結果を再計算して表示
+     */
+    private void recalculateResult() {
+        if (lastParsedExpr == null) {
+            return;
+        }
+        
+        try {
+            // 変数コンテキストをSymに設定
+            Sym.setGlobalContext(variableContext);
+            
+            // 再計算
+            double value = lastParsedExpr.eval(1.0);
+            
+            // 結果エリアの最後の計算結果部分を更新
+            String currentText = resultArea.getText();
+            int lastResultIndex = currentText.lastIndexOf("【計算結果】");
+            if (lastResultIndex >= 0) {
+                // 最後の計算結果部分を削除
+                String beforeResult = currentText.substring(0, lastResultIndex);
+                resultArea.setText(beforeResult);
+            }
+            
+            // 新しい計算結果を追加
+            resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            resultArea.append("【計算結果】\n");
+            resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            
+            java.util.Set<String> variables = VariableExtractor.extractVariables(lastParsedExpr);
+            if (!variables.isEmpty()) {
+                resultArea.append("変数の値:\n");
+                for (String varName : variables) {
+                    double varValue = variableContext.getVariable(varName);
+                    resultArea.append("  " + varName + " = " + varValue + "\n");
+                }
+                resultArea.append("\n");
+            }
+            
+            resultArea.append("答え = " + value + "\n\n");
+            
+            // スクロールを最下部に
+            resultArea.setCaretPosition(resultArea.getText().length());
+        } catch (Exception e) {
+            resultArea.append("再計算エラー: " + e.getMessage() + "\n");
+        }
     }
     
     /**
