@@ -376,27 +376,36 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             // 矩形を描画
             g2d.drawRect(x1, y1, x2 - x1, y2 - y1);
             
-            // ラベル（クラス名とスコア）を描画
+            // 中心点を描画
+            int cx = (int) Math.round(bbox.cx());
+            int cy = (int) Math.round(bbox.cy());
+            g2d.fillOval(cx - 3, cy - 3, 6, 6);
+            
+            // ラベル（クラス名、スコア、座標情報）を描画
             String label = String.format("%s (%.2f)", sym.token, sym.score);
+            String coordLabel = String.format("[%.0f,%.0f,%.0f,%.0f] cx=%.0f cy=%.0f", 
+                bbox.x1, bbox.y1, bbox.x2, bbox.y2, bbox.cx(), bbox.cy());
             
             // ラベルの背景を描画
             FontMetrics fm = g2d.getFontMetrics();
-            int labelWidth = fm.stringWidth(label);
+            int labelWidth = Math.max(fm.stringWidth(label), fm.stringWidth(coordLabel));
             int labelHeight = fm.getHeight();
             
             g2d.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 200));
-            g2d.fillRect(x1, y1 - labelHeight - 2, labelWidth + 4, labelHeight + 2);
+            g2d.fillRect(x1, y1 - labelHeight * 2 - 4, labelWidth + 4, labelHeight * 2 + 4);
             
             // ラベルのテキストを描画
             g2d.setColor(Color.WHITE);
-            g2d.drawString(label, x1 + 2, y1 - 4);
+            g2d.drawString(label, x1 + 2, y1 - labelHeight - 2);
+            g2d.drawString(coordLabel, x1 + 2, y1 - 2);
         }
         
         g2d.dispose();
         
         // 新しいウィンドウで表示
-        Frame detectionFrame = new Frame("検出領域の表示");
-        detectionFrame.setSize(lastCanvasImage.getWidth() + 50, lastCanvasImage.getHeight() + 100);
+        Frame detectionFrame = new Frame("検出領域の表示（デバッグ用）");
+        // 詳細情報を表示するためにウィンドウを大きくする
+        detectionFrame.setSize(lastCanvasImage.getWidth() + 600, lastCanvasImage.getHeight() + 150);
         detectionFrame.setLayout(new BorderLayout());
         
         Canvas detectionCanvas = new Canvas() {
@@ -407,18 +416,56 @@ public class MathExpressionGUI extends Frame implements ActionListener {
         };
         detectionCanvas.setSize(lastCanvasImage.getWidth(), lastCanvasImage.getHeight());
         
+        // 詳細情報を表示するテキストエリアを追加
+        TextArea detailArea = new TextArea("", 20, 80, TextArea.SCROLLBARS_VERTICAL_ONLY);
+        detailArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        detailArea.setEditable(false);
+        
+        // 詳細情報を構築
+        StringBuilder detailText = new StringBuilder();
+        detailText.append("検出数: ").append(lastDetection.symbols.size()).append(" 個\n\n");
+        detailText.append("詳細情報:\n");
+        detailText.append(String.format("%-5s %-10s %-8s %-15s %-15s %-15s %-15s\n", 
+            "番号", "トークン", "スコア", "x1,y1", "x2,y2", "中心(cx,cy)", "サイズ(w,h)"));
+        detailText.append("────────────────────────────────────────────────────────────────────────────\n");
+        
+        for (int i = 0; i < lastDetection.symbols.size(); i++) {
+            DetSymbol sym = lastDetection.symbols.get(i);
+            parse.BBox bbox = sym.box;
+            detailText.append(String.format("%-5d %-10s %-8.3f %-15s %-15s %-15s %-15s\n",
+                i + 1,
+                sym.token,
+                sym.score,
+                String.format("%.1f,%.1f", bbox.x1, bbox.y1),
+                String.format("%.1f,%.1f", bbox.x2, bbox.y2),
+                String.format("%.1f,%.1f", bbox.cx(), bbox.cy()),
+                String.format("%.1f,%.1f", bbox.w(), bbox.h())
+            ));
+        }
+        
+        detailArea.setText(detailText.toString());
+        
         Panel infoPanel = new Panel();
-        infoPanel.setLayout(new FlowLayout());
+        infoPanel.setLayout(new BorderLayout());
+        
+        Panel buttonPanel = new Panel();
+        buttonPanel.setLayout(new FlowLayout());
         Label infoLabel = new Label("検出数: " + lastDetection.symbols.size() + " 個");
         infoLabel.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-        infoPanel.add(infoLabel);
+        buttonPanel.add(infoLabel);
         
         Button closeButton = new Button("閉じる");
         closeButton.addActionListener(e -> detectionFrame.dispose());
-        infoPanel.add(closeButton);
+        buttonPanel.add(closeButton);
         
-        detectionFrame.add(detectionCanvas, BorderLayout.CENTER);
-        detectionFrame.add(infoPanel, BorderLayout.SOUTH);
+        // レイアウトを変更：画像と詳細情報を横並びに
+        Panel mainPanel = new Panel();
+        mainPanel.setLayout(new BorderLayout());
+        mainPanel.add(detectionCanvas, BorderLayout.CENTER);
+        mainPanel.add(detailArea, BorderLayout.EAST);
+        
+        detectionFrame.add(mainPanel, BorderLayout.CENTER);
+        detectionFrame.add(buttonPanel, BorderLayout.SOUTH);
         
         detectionFrame.addWindowListener(new WindowAdapter() {
             @Override
