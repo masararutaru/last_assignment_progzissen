@@ -378,24 +378,6 @@ public class OnnxInference implements AutoCloseable {
                 }
             }
             
-            // )が(に誤認識されるのを防ぐ: )のスコアが(のスコアに近い場合、)を優先
-            // 拡張版では括弧はクラス42（(）と43（)）
-            if (bestClass == 42 && secondBestClass == 43) {  // (が最良、)が2位
-                double ratio = maxScore / (secondBestScore + 0.0001);  // 0除算防止
-                if (ratio < 1.3) {  // スコア差が30%未満なら)を優先
-                    // )を優先
-                    int temp = bestClass;
-                    bestClass = secondBestClass;
-                    secondBestClass = temp;
-                    double tempScore = maxScore;
-                    maxScore = secondBestScore;
-                    secondBestScore = tempScore;
-                    if (i < 5) {
-                        System.out.println(String.format("    [補正] )を優先 (スコア比=%.2f)", ratio));
-                    }
-                }
-            }
-            
             // デバッグ: 最初の5個の候補のスコア情報を表示
             if (i < 5) {
                 System.out.println(String.format("    bestClass=%d maxScore=%.3f (2位: class=%d score=%.3f, 閾値=%.3f)", 
