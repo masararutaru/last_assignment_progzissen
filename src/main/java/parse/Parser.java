@@ -95,22 +95,24 @@ public class Parser {
                             // 引数は右から左に積まれているので、逆順に取得
                             List<Expr> args = new ArrayList<>();
                             // 括弧内の引数を取得（カンマで区切られている）
-                            // 簡易実装：引数は既にvalStackに積まれていると仮定
-                            // 実際には、カンマ区切りの引数を処理する必要がある
-                            // ここでは、valStackから引数を取得
-                            if (!valStack.isEmpty()) {
+                            // limit関数は通常2つの引数（limitValue, expression）を持つ
+                            // ただし、3つの引数（variable, limitValue, expression）の場合もある
+                            // ここでは、valStackから引数を取得（最大3つまで）
+                            int argCount = 0;
+                            while (!valStack.isEmpty() && argCount < 3) {
                                 args.add(valStack.pop());
+                                argCount++;
                             }
-                            if (!valStack.isEmpty()) {
-                                args.add(valStack.pop());
-                            }
-                            if (!valStack.isEmpty()) {
-                                args.add(valStack.pop());
+                            if (args.isEmpty()) {
+                                throw new IllegalArgumentException("limit関数に引数がありません");
                             }
                             Collections.reverse(args); // 正しい順序に
                             valStack.push(new Func(f.text, args));
                         } else {
                             // その他の関数は1引数
+                            if (valStack.isEmpty()) {
+                                throw new IllegalArgumentException("関数 " + f.text + " に引数がありません");
+                            }
                             Expr arg = valStack.pop();
                             valStack.push(new Func(f.text, List.of(arg)));
                         }
@@ -175,6 +177,9 @@ public class Parser {
     }
 
     private static void applyOp(String op, Deque<Expr> valStack) {
+        if (valStack.size() < 2) {
+            throw new IllegalArgumentException("演算子 " + op + " に必要な値がスタックにありません (スタックサイズ: " + valStack.size() + ")");
+        }
         Expr b = valStack.pop();
         Expr a = valStack.pop();
 

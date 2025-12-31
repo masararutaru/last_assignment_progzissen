@@ -609,6 +609,12 @@ public class SpatialToExpr {
                     }
                 }
                 
+                // デバッグ情報を追加
+                if (variable == null) {
+                    warnings.add("lim処理: 変数が見つかりませんでした (候補: " + 
+                        candidates.stream().map(c -> c.token).collect(Collectors.joining(", ")) + ")");
+                }
+                
                 // 変数が見つかったら、その後に矢印を探す
                 if (variable != null) {
                     for (Candidate candidate : candidates) {
@@ -622,6 +628,23 @@ public class SpatialToExpr {
                             break;
                         }
                     }
+                } else {
+                    // 変数が見つからない場合でも、矢印を探す（順序が x, 0, → の場合）
+                    for (Candidate candidate : candidates) {
+                        if (used[candidate.index]) continue;
+                        String otherToken = candidate.token;
+                        
+                        if (arrow == null && otherToken.equals("→")) {
+                            arrow = otherToken;
+                            used[candidate.index] = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // デバッグ情報を追加
+                if (arrow == null) {
+                    warnings.add("lim処理: 矢印が見つかりませんでした");
                 }
                 
                 // 矢印が見つかったら、その前後で収束値を探す
@@ -652,6 +675,26 @@ public class SpatialToExpr {
                             }
                         }
                     }
+                } else {
+                    // 矢印が見つからない場合でも、収束値を探す（順序が x, 0, → の場合）
+                    for (Candidate candidate : candidates) {
+                        if (used[candidate.index]) continue;
+                        String otherToken = candidate.token;
+                        
+                        // 収束値（数字、変数、または∞）
+                        if (limitValue == null && 
+                            (isNumberLike(otherToken) || isVariable(otherToken) || otherToken.equals("∞"))) {
+                            limitValue = otherToken;
+                            limitValueIndex = candidate.index;
+                            used[candidate.index] = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // デバッグ情報を追加
+                if (limitValue == null) {
+                    warnings.add("lim処理: 収束値が見つかりませんでした");
                 }
                 
                 // limの後に続く式全体を取得（収束値の後から式の終わりまで）
