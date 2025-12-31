@@ -29,6 +29,22 @@ public class SpatialToExpr {
         }
     }
     
+    /**
+     * 分数情報を保持する内部クラス
+     */
+    private static class FractionInfo {
+        final List<DetSymbol> numeratorSymbols;      // 分子のシンボル
+        final List<DetSymbol> denominatorSymbols;    // 分母のシンボル
+        final List<DetSymbol> beforeFractionSymbols;  // 分数線より前のシンボル
+        
+        FractionInfo(List<DetSymbol> numeratorSymbols, List<DetSymbol> denominatorSymbols, 
+                    List<DetSymbol> beforeFractionSymbols) {
+            this.numeratorSymbols = numeratorSymbols;
+            this.denominatorSymbols = denominatorSymbols;
+            this.beforeFractionSymbols = beforeFractionSymbols;
+        }
+    }
+    
 
     public Result buildExprString(Detection det) {
         List<String> warnings = new ArrayList<>();
@@ -121,6 +137,38 @@ public class SpatialToExpr {
                 debugInfo.append(merged.get(k).token).append("(").append(String.format("%.1f", merged.get(k).box.cx())).append(") ");
             }
             warnings.add(debugInfo.toString());
+        }
+        
+        // 3.5) 分数を検出して分子と分母を分離（他の処理より先に実行）
+        FractionInfo fractionInfo = detectFraction(merged, warnings);
+        
+        // 分数が見つかった場合、分子と分母を分離して処理
+        if (fractionInfo != null) {
+            // 分子と分母をそれぞれ処理
+            String numeratorExpr = processExpressionPart(fractionInfo.numeratorSymbols, warnings);
+            String denominatorExpr = processExpressionPart(fractionInfo.denominatorSymbols, warnings);
+            
+            // 分数線より前のシンボルを処理
+            String beforeFractionExpr = processExpressionPart(fractionInfo.beforeFractionSymbols, warnings);
+            
+            // 結果を結合: (beforeFraction) * (numerator) / (denominator)
+            // ただし、beforeFractionが空または"1"の場合は含めない
+            List<String> resultTokens = new ArrayList<>();
+            if (!beforeFractionExpr.isEmpty() && !beforeFractionExpr.equals("1")) {
+                resultTokens.add(beforeFractionExpr);
+                resultTokens.add("*");
+            }
+            resultTokens.add("(");
+            resultTokens.add(numeratorExpr);
+            resultTokens.add(")");
+            resultTokens.add("/");
+            resultTokens.add("(");
+            resultTokens.add(denominatorExpr);
+            resultTokens.add(")");
+            
+            String expr = String.join("", resultTokens);
+            if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
+            return new Result(expr, warnings);
         }
         
         // 4) トークン列にしつつ、べき(右上)をまとめる
@@ -1189,5 +1237,208 @@ public class SpatialToExpr {
         }
         
         return result;
+    }
+    
+    /**
+     * 分数を検出して分子と分母を分離
+     * @param merged 関数名マージ後のシンボル列
+     * @param warnings 警告リスト
+     * @return 分数情報（分数が見つからない場合はnull）
+     */
+    private FractionInfo detectFraction(List<DetSymbol> merged, List<String> warnings) {
+        // 分数線（/）を検出
+        for (int i = 0; i < merged.size(); i++) {
+            DetSymbol symbol = merged.get(i);
+            if (symbol.token.equals("/")) {
+                // d/dxパターンを除外
+                if (i > 0 && i + 1 < merged.size() &&
+                    merged.get(i - 1).token.equals("d") &&
+                    merged.get(i + 1).token.equals("d")) {
+                    continue;
+                }
+                
+                BBox fracLine = symbol.box;
+                
+                // 分数線の上下にあるシンボルを探す
+                List<DetSymbol> numeratorSymbols = new ArrayList<>();
+                List<DetSymbol> denominatorSymbols = new ArrayList<>();
+                List<DetSymbol> beforeFractionSymbols = new ArrayList<>();
+                
+                // 分数線のx座標範囲
+                double fracLineLeft = fracLine.x1;
+                double margin = fracLine.w() * 0.5;
+                double fracRight = fracLine.x2 + margin;
+                
+                // 分数線のy座標範囲
+                double fracTop = fracLine.y1;
+                double fracBottom = fracLine.y2;
+                double fracCenterY = fracLine.cy();
+                double threshold = Math.max(fracLine.h() * 0.3, 5.0);
+                
+                // すべてのシンボルをチェック
+                for (int j = 0; j < merged.size(); j++) {
+                    if (j == i) continue; // 分数線自体はスキップ
+                    
+                    DetSymbol otherSymbol = merged.get(j);
+                    BBox otherBox = otherSymbol.box;
+                    String otherToken = otherSymbol.token;
+                    
+                    // 関数名（lim, sin, cosなど）は分数の一部として扱わない
+                    if (isFunc(otherToken) && !otherToken.equals("lim")) {
+                        continue;
+                    }
+                    
+                    double otherCenterX = otherBox.cx();
+                    double otherCenterY = otherBox.cy();
+                    double otherTop = otherBox.y1;
+                    double otherBottom = otherBox.y2;
+                    
+                    // 分数線より前（左側）のシンボル
+                    if (otherCenterX < fracLineLeft) {
+                        beforeFractionSymbols.add(otherSymbol);
+                        continue;
+                    }
+                    
+                    // x座標が分数線の範囲内にあるかチェック
+                    if (otherCenterX >= fracLineLeft && otherCenterX <= fracRight) {
+                        // 分子の判定：分数線の上にある
+                        double numeratorThreshold = Math.max(fracLine.h() * 0.5, 10.0);
+                        if (otherBottom < fracTop - numeratorThreshold || 
+                            (otherCenterY < fracCenterY - threshold && otherBottom < fracTop - threshold)) {
+                            numeratorSymbols.add(otherSymbol);
+                        }
+                        // 分母の判定：分数線の下にある
+                        else {
+                            double denominatorThreshold = Math.max(fracLine.h() * 0.5, 10.0);
+                            if (otherTop > fracBottom + denominatorThreshold || 
+                                (otherCenterY > fracCenterY + threshold && otherTop > fracBottom + threshold)) {
+                                denominatorSymbols.add(otherSymbol);
+                            }
+                        }
+                    }
+                }
+                
+                // 分子と分母をx座標でソート
+                numeratorSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
+                denominatorSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
+                beforeFractionSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
+                
+                // デバッグ情報を追加
+                StringBuilder debugInfo = new StringBuilder();
+                debugInfo.append("分数処理: 分子=");
+                if (numeratorSymbols.isEmpty()) {
+                    debugInfo.append("なし");
+                } else {
+                    for (DetSymbol sym : numeratorSymbols) {
+                        debugInfo.append(sym.token).append("(").append(String.format("%.1f", sym.box.cy())).append(") ");
+                    }
+                }
+                debugInfo.append(", 分母=");
+                if (denominatorSymbols.isEmpty()) {
+                    debugInfo.append("なし");
+                } else {
+                    for (DetSymbol sym : denominatorSymbols) {
+                        debugInfo.append(sym.token).append("(").append(String.format("%.1f", sym.box.cy())).append(") ");
+                    }
+                }
+                debugInfo.append(", 分数線y=").append(String.format("%.1f", fracCenterY));
+                warnings.add(debugInfo.toString());
+                
+                // 分子または分母が見つかった場合、分数情報を返す
+                if (!numeratorSymbols.isEmpty() || !denominatorSymbols.isEmpty()) {
+                    return new FractionInfo(numeratorSymbols, denominatorSymbols, beforeFractionSymbols);
+                }
+            }
+        }
+        
+        return null; // 分数が見つからない場合
+    }
+    
+    /**
+     * 式の一部（分子または分母）を処理
+     * べき乗、ルート、絶対値、微分、極限、括弧修正、暗黙の掛け算を適用
+     * @param symbols 処理するシンボル列
+     * @param warnings 警告リスト
+     * @return 処理後の式文字列
+     */
+    private String processExpressionPart(List<DetSymbol> symbols, List<String> warnings) {
+        if (symbols.isEmpty()) {
+            return "1"; // 空の場合は1とする
+        }
+        
+        // 1) トークン列にしつつ、べき(右上)をまとめる
+        List<String> tokens = new ArrayList<>();
+        List<DetSymbol> tokenSymbols = new ArrayList<>();
+        int i = 0;
+        while (i < symbols.size()) {
+            DetSymbol cur = symbols.get(i);
+            tokens.add(cur.token);
+            tokenSymbols.add(cur);
+            
+            // exponent判定：次が "右上に小さい塊" なら ^( ... ) を挿入
+            if (i + 1 < symbols.size()) {
+                DetSymbol nxt = symbols.get(i + 1);
+                if (looksLikeSuperscript(cur, nxt)) {
+                    List<DetSymbol> sup = new ArrayList<>();
+                    int j = i + 1;
+                    while (j < symbols.size() && looksLikeSuperscript(cur, symbols.get(j))) {
+                        sup.add(symbols.get(j));
+                        j++;
+                    }
+                    
+                    if (!sup.isEmpty()) {
+                        sup.sort(Comparator.comparingDouble(a -> a.box.cx()));
+                        String supStr = sup.stream().map(x -> x.token).collect(Collectors.joining());
+                        
+                        tokens.add("^");
+                        tokenSymbols.add(null);
+                        tokens.add("(");
+                        tokenSymbols.add(null);
+                        tokens.add(supStr);
+                        tokenSymbols.add(null);
+                        tokens.add(")");
+                        tokenSymbols.add(null);
+                        
+                        i = j;
+                        continue;
+                    }
+                }
+            }
+            
+            i++;
+        }
+        
+        // 2) ルート記号の処理
+        tokens = processSqrtSymbols(tokens, tokenSymbols, warnings);
+        
+        // 3) 絶対値の処理
+        tokens = processAbsoluteValue(tokens, warnings);
+        
+        // 4) 微分演算子の処理
+        tokens = processDerivatives(tokens, warnings);
+        
+        // 5) 極限の処理
+        tokens = processLimits(tokens, tokenSymbols, warnings);
+        
+        // 6) 括弧の対応を修正
+        List<String> correctedParens = fixParenMismatch(tokens, tokenSymbols, warnings);
+        
+        // 7) 暗黙の掛け算を挿入
+        List<String> withMul = new ArrayList<>();
+        for (int k = 0; k < correctedParens.size(); k++) {
+            String a = correctedParens.get(k);
+            withMul.add(a);
+            if (k + 1 < correctedParens.size()) {
+                String b = correctedParens.get(k + 1);
+                DetSymbol symA = null;
+                DetSymbol symB = null;
+                if (needImplicitMul(a, b, symA, symB)) {
+                    withMul.add("*");
+                }
+            }
+        }
+        
+        // 8) 文字列化
+        return String.join("", withMul);
     }
 }
