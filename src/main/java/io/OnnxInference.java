@@ -7,7 +7,6 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.FloatBuffer;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * ONNX Runtimeを使用したYOLOv5推論クラス
@@ -63,14 +62,14 @@ public class OnnxInference implements AutoCloseable {
                 this.numClasses = outputDim - 5;  // 5 = 4(bbox) + 1(objectness)
                 System.out.println("[ONNX] 検出されたクラス数: " + this.numClasses + " (出力次元: " + outputDim + ")");
             } else {
-                // フォールバック: デフォルトで18クラス
-                this.numClasses = 18;
-                System.out.println("[ONNX] 警告: 出力形状からクラス数を取得できませんでした。デフォルト値18を使用します。");
+                // フォールバック: デフォルトで61クラス（拡張版）
+                this.numClasses = 61;
+                System.out.println("[ONNX] 警告: 出力形状からクラス数を取得できませんでした。デフォルト値61（拡張版）を使用します。");
             }
         } catch (Exception e) {
-            // エラー時はデフォルトで18クラス
-            this.numClasses = 18;
-            System.err.println("[ONNX] 警告: モデル情報の取得に失敗しました。デフォルト値18を使用します: " + e.getMessage());
+            // エラー時はデフォルトで61クラス（拡張版）
+            this.numClasses = 61;
+            System.err.println("[ONNX] 警告: モデル情報の取得に失敗しました。デフォルト値61（拡張版）を使用します: " + e.getMessage());
         }
     }
     
@@ -380,7 +379,8 @@ public class OnnxInference implements AutoCloseable {
             }
             
             // )が(に誤認識されるのを防ぐ: )のスコアが(のスコアに近い場合、)を優先
-            if (bestClass == 16 && secondBestClass == 17) {  // (が最良、)が2位
+            // 拡張版では括弧はクラス42（(）と43（)）
+            if (bestClass == 42 && secondBestClass == 43) {  // (が最良、)が2位
                 double ratio = maxScore / (secondBestScore + 0.0001);  // 0除算防止
                 if (ratio < 1.3) {  // スコア差が30%未満なら)を優先
                     // )を優先
@@ -479,14 +479,33 @@ public class OnnxInference implements AutoCloseable {
         System.out.println("  重複除去後の候補数: " + nmsResult.size());
         
         // DetSymbolに変換（LabelMapを使用してクラスID → トークン変換）
+        // 範囲外のクラスIDはスキップして警告を表示
         LabelMap labelMap = new LabelMap();
-        List<DetSymbol> result = nmsResult.stream()
-            .map(cand -> {
+        List<DetSymbol> result = new ArrayList<>();
+        int skippedInvalidClass = 0;
+        
+        for (DetectionCandidate cand : nmsResult) {
+            if (!labelMap.isValidClassId(cand.classId)) {
+                System.err.println(String.format("[WARN] 無効なクラスIDをスキップ: %d (スコア=%.3f, bbox=[%.1f,%.1f,%.1f,%.1f])", 
+                    cand.classId, cand.score, cand.bbox.x1, cand.bbox.y1, cand.bbox.x2, cand.bbox.y2));
+                skippedInvalidClass++;
+                continue;
+            }
+            
+            try {
                 String cls = labelMap.getClassLabel(cand.classId);
                 String token = labelMap.getToken(cls);
-                return new DetSymbol(cls, token, cand.score, cand.bbox);
-            })
-            .collect(Collectors.toList());
+                result.add(new DetSymbol(cls, token, cand.score, cand.bbox));
+            } catch (IllegalArgumentException e) {
+                System.err.println(String.format("[WARN] クラスID %d の処理に失敗: %s (スコア=%.3f)", 
+                    cand.classId, e.getMessage(), cand.score));
+                skippedInvalidClass++;
+            }
+        }
+        
+        if (skippedInvalidClass > 0) {
+            System.out.println(String.format("[WARN] 無効なクラスIDでスキップされた検出: %d件", skippedInvalidClass));
+        }
         
         System.out.println("[DEBUG] 最終検出数: " + result.size());
         return result;
