@@ -243,9 +243,9 @@ public class MathExpressionGUI extends Frame implements ActionListener {
             resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
             resultArea.append(inferredExpr + "\n\n");
             
-            // 警告があれば表示
+            // 警告があれば表示（括弧の修正情報も含む）
             if (!spatialResult.warnings.isEmpty()) {
-                resultArea.append("⚠ 警告:\n");
+                resultArea.append("⚠ 警告・情報:\n");
                 for (String warn : spatialResult.warnings) {
                     resultArea.append("  - " + warn + "\n");
                 }

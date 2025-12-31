@@ -170,7 +170,8 @@ public class SpatialToExpr {
 
         // 10) 括弧の対応を修正（)が(に誤認識される問題に対処）
         // 暗黙の掛け算を挿入する前に括弧の対応を修正する必要がある
-        List<String> correctedParens = fixParenMismatch(tokens, warnings);
+        // tokenSymbolsも渡してbbox情報を活用
+        List<String> correctedParens = fixParenMismatch(tokens, tokenSymbols, warnings);
 
         // 11) 暗黙の掛け算を挿入（めちゃ大事）
         List<String> withMul = new ArrayList<>();
@@ -544,21 +545,38 @@ public class SpatialToExpr {
                 String limitValue = null;
                 int limitValueIndex = -1;
                 
-                // まず、limの右側にあるすべての候補を収集（x座標でソート済み）
+                // まず、limの周辺にあるすべての候補を収集（x座標でソート済み）
+                // limの左側も含めて検索（変数がlimの左側にある場合がある）
                 List<Candidate> candidates = new ArrayList<>();
-                for (int j = i + 1; j < tokens.size() && j < i + 10; j++) { // 最大10個までチェック
-                    if (used[j] || tokenSymbols.get(j) == null) continue;
+                // より適切な範囲に調整
+                double searchMarginX = limBox.w() * 1.5; // limの左右の検索範囲（左側も含む）
+                double searchMarginY = limBox.h() * 2.5; // limの上下の検索範囲
+                double maxDistanceX = limBox.w() * 4.0; // 最大x距離（これより遠いものは除外）
+                
+                for (int j = 0; j < tokens.size(); j++) {
+                    if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
                     
                     String otherToken = tokens.get(j);
                     DetSymbol otherSymbol = tokenSymbols.get(j);
                     BBox otherBox = otherSymbol.box;
                     
-                    // bbox情報も確認（同じ行にあることを確認）
-                    boolean sameRow = Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 3.0;
-                    boolean rightSide = otherBox.x1 >= limBox.x1;
+                    // bbox情報も確認（同じ行または近い行にあることを確認）
+                    double dy = Math.abs(otherBox.cy() - limBox.cy());
+                    double dx = otherBox.cx() - limBox.cx();
                     
-                    if (sameRow && rightSide) {
-                        candidates.add(new Candidate(j, otherToken, otherBox.cx()));
+                    // limの周辺（左右、上下）にあるシンボルを候補として追加
+                    // 左側も含めるが、範囲を制限
+                    if (dy < searchMarginY && Math.abs(dx) < maxDistanceX) {
+                        // 左側の場合は、より近いもののみ（変数がlimの左側にある場合がある）
+                        if (dx < 0) {
+                            // 左側: limの左側にあるが、あまり離れていないもの
+                            if (Math.abs(dx) < searchMarginX) {
+                                candidates.add(new Candidate(j, otherToken, otherBox.cx()));
+                            }
+                        } else {
+                            // 右側: limの右側にあるもの（通常のケース）
+                            candidates.add(new Candidate(j, otherToken, otherBox.cx()));
+                        }
                     }
                 }
                 
@@ -608,9 +626,9 @@ public class SpatialToExpr {
                         if (used[candidate.index]) continue;
                         String otherToken = candidate.token;
                         
-                        // 収束値（数字または変数）
+                        // 収束値（数字、変数、または∞）
                         if (limitValue == null && 
-                            (isNumberLike(otherToken) || isVariable(otherToken))) {
+                            (isNumberLike(otherToken) || isVariable(otherToken) || otherToken.equals("∞"))) {
                             // 矢印の前後にあることを確認（x座標で）
                             if (Math.abs(candidate.x - arrowX) < limBox.w() * 5.0) {
                                 limitValue = otherToken;
@@ -792,30 +810,64 @@ public class SpatialToExpr {
     }
     
     /**
-     * 括弧の対応を修正（簡易版）
+     * 括弧の対応を修正（bbox情報を活用した改善版）
      * 開き括弧が余っている場合は、右端の開き括弧を閉じ括弧に修正
      * 閉じ括弧が余っている場合は、左端の閉じ括弧を開き括弧に修正
+     * bbox情報を使って、実際の位置関係から括弧の向きを判定
      */
-    private List<String> fixParenMismatch(List<String> tokens, List<String> warnings) {
+    private List<String> fixParenMismatch(List<String> tokens, List<DetSymbol> tokenSymbols, List<String> warnings) {
         List<String> result = new ArrayList<>(tokens);
+        
+        // tokenSymbolsが利用可能な場合、bbox情報を使って括弧の向きを判定
+        boolean useBbox = (tokenSymbols != null && tokens.size() == tokenSymbols.size());
         
         // 括弧のバランスを計算
         int openCount = 0;
         int closeCount = 0;
-        for (String token : result) {
-            if (token.equals("(")) openCount++;
-            if (token.equals(")")) closeCount++;
+        List<Integer> openIndices = new ArrayList<>();
+        List<Integer> closeIndices = new ArrayList<>();
+        
+        for (int i = 0; i < result.size(); i++) {
+            String token = result.get(i);
+            if (token.equals("(")) {
+                openCount++;
+                openIndices.add(i);
+            }
+            if (token.equals(")")) {
+                closeCount++;
+                closeIndices.add(i);
+            }
         }
         
         // 開き括弧が余っている場合：右端から順に閉じ括弧に修正
         if (openCount > closeCount) {
             int excess = openCount - closeCount;
             int fixed = 0;
-            for (int i = result.size() - 1; i >= 0 && fixed < excess; i--) {
-                if (result.get(i).equals("(")) {
-                    result.set(i, ")");
+            
+            // bbox情報を使って、右端の開き括弧を優先的に修正
+            if (useBbox && !openIndices.isEmpty()) {
+                // x座標でソート（右端から）
+                openIndices.sort((a, b) -> {
+                    DetSymbol symA = tokenSymbols.get(a);
+                    DetSymbol symB = tokenSymbols.get(b);
+                    if (symA == null || symB == null) return 0;
+                    return Double.compare(symB.box.cx(), symA.box.cx()); // 降順
+                });
+                
+                for (int idx : openIndices) {
+                    if (fixed >= excess) break;
+                    result.set(idx, ")");
                     fixed++;
-                    warnings.add(String.format("括弧の対応を修正: 位置%dの(を)に変更", i));
+                    warnings.add(String.format("括弧の対応を修正: 位置%dの(を)に変更 (bbox情報を使用)", idx));
+                }
+            } else {
+                // bbox情報がない場合は従来通り
+                for (int i = result.size() - 1; i >= 0 && fixed < excess; i--) {
+                    if (result.get(i).equals("(")) {
+                        result.set(i, ")");
+                        fixed++;
+                        warnings.add(String.format("括弧の対応を修正: 位置%dの(を)に変更", i));
+                    }
                 }
             }
         }
@@ -823,11 +875,31 @@ public class SpatialToExpr {
         else if (closeCount > openCount) {
             int excess = closeCount - openCount;
             int fixed = 0;
-            for (int i = 0; i < result.size() && fixed < excess; i++) {
-                if (result.get(i).equals(")")) {
-                    result.set(i, "(");
+            
+            // bbox情報を使って、左端の閉じ括弧を優先的に修正
+            if (useBbox && !closeIndices.isEmpty()) {
+                // x座標でソート（左端から）
+                closeIndices.sort((a, b) -> {
+                    DetSymbol symA = tokenSymbols.get(a);
+                    DetSymbol symB = tokenSymbols.get(b);
+                    if (symA == null || symB == null) return 0;
+                    return Double.compare(symA.box.cx(), symB.box.cx()); // 昇順
+                });
+                
+                for (int idx : closeIndices) {
+                    if (fixed >= excess) break;
+                    result.set(idx, "(");
                     fixed++;
-                    warnings.add(String.format("括弧の対応を修正: 位置%dの)を(に変更", i));
+                    warnings.add(String.format("括弧の対応を修正: 位置%dの)を(に変更 (bbox情報を使用)", idx));
+                }
+            } else {
+                // bbox情報がない場合は従来通り
+                for (int i = 0; i < result.size() && fixed < excess; i++) {
+                    if (result.get(i).equals(")")) {
+                        result.set(i, "(");
+                        fixed++;
+                        warnings.add(String.format("括弧の対応を修正: 位置%dの)を(に変更", i));
+                    }
                 }
             }
         }
