@@ -54,6 +54,21 @@ public class Parser {
                     prevWasValue = false;
                     break;
 
+                case COMMA:
+                    // カンマはlimit関数の引数区切りとして処理
+                    // カンマの前の式を引数として収集するため、演算子スタックを処理
+                    while (!opStack.isEmpty() && !opStack.peek().equals("(")) {
+                        String op = opStack.pop();
+                        if (op.equals("u-")) {
+                            applyUnaryNeg(valStack);
+                        } else {
+                            applyOp(op, valStack);
+                        }
+                    }
+                    // カンマの前の式はvalStackに積まれているので、そのまま続ける
+                    prevWasValue = false;
+                    break;
+
                 case RPAREN:
                     while (!opStack.isEmpty() && !opStack.peek().equals("(")) {
                         String op = opStack.pop();
@@ -73,9 +88,31 @@ public class Parser {
                     // 直前に関数が積まれていれば適用
                     if (!funcStack.isEmpty()) {
                         Token f = funcStack.pop();
-                        // Phase1: 1引数関数のみ
-                        Expr arg = valStack.pop();
-                        valStack.push(new Func(f.text, List.of(arg)));
+                        // limit関数は複数引数をサポート
+                        if (f.text.equals("limit")) {
+                            // limit関数はカンマ区切りの引数を処理
+                            // 引数は右から左に積まれているので、逆順に取得
+                            List<Expr> args = new ArrayList<>();
+                            // 括弧内の引数を取得（カンマで区切られている）
+                            // 簡易実装：引数は既にvalStackに積まれていると仮定
+                            // 実際には、カンマ区切りの引数を処理する必要がある
+                            // ここでは、valStackから引数を取得
+                            if (!valStack.isEmpty()) {
+                                args.add(valStack.pop());
+                            }
+                            if (!valStack.isEmpty()) {
+                                args.add(valStack.pop());
+                            }
+                            if (!valStack.isEmpty()) {
+                                args.add(valStack.pop());
+                            }
+                            Collections.reverse(args); // 正しい順序に
+                            valStack.push(new Func(f.text, args));
+                        } else {
+                            // その他の関数は1引数
+                            Expr arg = valStack.pop();
+                            valStack.push(new Func(f.text, List.of(arg)));
+                        }
                         prevWasValue = true;
                     } else {
                         prevWasValue = true;

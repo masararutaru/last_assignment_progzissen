@@ -75,13 +75,54 @@ public class Func implements Expr {
                 // TODO: シンボリック微分を実装
                 return 0.0;
             
-            // 極限（簡易実装：直接代入）
+            // 極限（lim_{variable→limitValue} expression）
             case "limit":
-                if (args.size() != 1) {
-                    throw new IllegalArgumentException("Func limit needs 1 arg");
+                if (args.size() < 2 || args.size() > 3) {
+                    throw new IllegalArgumentException("Func limit needs 2 or 3 args: [variable], limitValue, [expression]");
                 }
-                // 簡易実装：極限は直接代入で近似
-                return args.get(0).eval(x);
+                
+                // 引数の処理
+                // args[0]: 変数名（オプション、文字列として扱う必要があるが、Exprなので簡易的に無視）
+                // args[1]: 収束値（またはargs[0]が収束値の場合）
+                // args[2]: 式（オプション）
+                
+                double limitValue;
+                Expr expression;
+                
+                if (args.size() == 2) {
+                    // limit(limitValue, expression) または limit(variable, limitValue)
+                    // 簡易実装：最初の引数を収束値として扱う
+                    limitValue = args.get(0).eval(x);
+                    expression = args.get(1);
+                } else {
+                    // limit(variable, limitValue, expression)
+                    limitValue = args.get(1).eval(x);
+                    expression = args.get(2);
+                }
+                
+                // 無限大への収束をチェック
+                boolean isInfinity = Double.isInfinite(limitValue);
+                boolean isZero = !isInfinity && Math.abs(limitValue) < 1e-10;
+                
+                // 式を評価
+                if (expression != null) {
+                    // 式がある場合、変数を収束値に近づけて評価
+                    if (isInfinity) {
+                        // 無限大への収束：大きな値で評価
+                        double largeValue = limitValue > 0 ? 1e10 : -1e10;
+                        return expression.eval(largeValue);
+                    } else if (isZero) {
+                        // 0への収束：小さな値で評価
+                        double smallValue = limitValue >= 0 ? 1e-10 : -1e-10;
+                        return expression.eval(smallValue);
+                    } else {
+                        // 通常の収束値：直接代入
+                        return expression.eval(limitValue);
+                    }
+                } else {
+                    // 式がない場合、収束値をそのまま返す
+                    return limitValue;
+                }
             
             default:
                 throw new IllegalArgumentException("Unknown func: " + name);

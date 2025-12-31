@@ -13,6 +13,21 @@ public class SpatialToExpr {
             this.warnings = warnings;
         }
     }
+    
+    /**
+     * インデックス、トークン、bboxを保持する内部クラス
+     */
+    private static class IndexedSymbol {
+        final int index;
+        final String token;
+        final BBox box;
+        
+        IndexedSymbol(int index, String token, BBox box) {
+            this.index = index;
+            this.token = token;
+            this.box = box;
+        }
+    }
 
     public Result buildExprString(Detection det) {
         List<String> warnings = new ArrayList<>();
@@ -142,14 +157,15 @@ public class SpatialToExpr {
         // 6) 絶対値の処理（|...|をabs(...)に変換）
         tokens = processAbsoluteValue(tokens, warnings);
         
-        // 7) 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
-        tokens = processFractions(tokens, tokenSymbols, warnings);
-        
-        // 8) 微分演算子の処理（d/dx構造を検出）
+        // 7) 微分演算子の処理（d/dx構造を検出）- 分数処理の前に実行してd/dxパターンを保護
         tokens = processDerivatives(tokens, warnings);
         
-        // 9) 極限の処理（lim_{x→a}構造を検出）
-        tokens = processLimits(tokens, warnings);
+        // 8) 極限の処理（lim_{x→a}構造を検出）- 分数処理の前に実行してlimパターンを保護
+        tokens = processLimits(tokens, tokenSymbols, warnings);
+        
+        // 9) 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
+        // 注意: 微分や極限の処理の後に実行することで、d/dxやlimパターンが分数として誤認識されるのを防ぐ
+        tokens = processFractions(tokens, tokenSymbols, warnings);
 
         // 10) 括弧の対応を修正（)が(に誤認識される問題に対処）
         // 暗黙の掛け算を挿入する前に括弧の対応を修正する必要がある
@@ -330,12 +346,129 @@ public class SpatialToExpr {
     
     /**
      * 分数の処理（分数線の上下を検出して(numerator)/(denominator)に変換）
-     * 簡易実装：水平線状の-記号で上下にシンボルがある場合を分数とみなす
+     * bbox情報を使って分数線（/）の上下にあるシンボルを分子・分母として判定
      */
     private List<String> processFractions(List<String> tokens, List<DetSymbol> tokenSymbols, List<String> warnings) {
-        // 簡易実装：分数線の検出は複雑なので、後で拡張
-        // 現時点ではそのまま返す
-        return tokens;
+        if (tokens.size() != tokenSymbols.size()) {
+            // tokenSymbolsのサイズが一致しない場合は処理をスキップ
+            warnings.add("分数処理: tokenSymbolsのサイズが一致しません");
+            return tokens;
+        }
+        
+        List<String> result = new ArrayList<>();
+        boolean[] used = new boolean[tokens.size()];
+        
+        for (int i = 0; i < tokens.size(); i++) {
+            if (used[i]) continue;
+            
+            String token = tokens.get(i);
+            DetSymbol symbol = tokenSymbols.get(i);
+            
+            // 分数線（/）を検出
+            if (token.equals("/") && symbol != null) {
+                // d/dxパターンを除外（微分演算子として既に処理済み）
+                if (i > 0 && i + 1 < tokens.size() &&
+                    tokens.get(i - 1).equals("d") &&
+                    tokens.get(i + 1).equals("d")) {
+                    // d/dxパターンの場合は分数として処理しない
+                    result.add(token);
+                    continue;
+                }
+                
+                BBox fracLine = symbol.box;
+                
+                // 分数線の上下にあるシンボルを探す
+                List<Integer> numeratorIndices = new ArrayList<>();
+                List<Integer> denominatorIndices = new ArrayList<>();
+                
+                // 分数線のx座標範囲を拡張（左右のマージンを考慮）
+                double margin = fracLine.w() * 1.0; // マージンを広めに設定
+                double fracCenterY = fracLine.cy();
+                double fracLeft = fracLine.x1 - margin;
+                double fracRight = fracLine.x2 + margin;
+                
+                // すべてのシンボルをチェック
+                for (int j = 0; j < tokens.size(); j++) {
+                    if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
+                    
+                    DetSymbol otherSymbol = tokenSymbols.get(j);
+                    BBox otherBox = otherSymbol.box;
+                    String otherToken = tokens.get(j);
+                    
+                    // 関数名（lim, sin, cosなど）は分数の一部として扱わない
+                    if (isFunc(otherToken) && !otherToken.equals("lim")) {
+                        continue;
+                    }
+                    
+                    // x座標が分数線の範囲内にあるかチェック
+                    double otherCenterX = otherBox.cx();
+                    if (otherCenterX >= fracLeft && otherCenterX <= fracRight) {
+                        // 上にあるシンボル（分子）
+                        // 分数線より十分上にある（y座標が小さい）
+                        if (otherBox.cy() < fracCenterY - fracLine.h() * 0.5) {
+                            numeratorIndices.add(j);
+                        }
+                        // 下にあるシンボル（分母）
+                        // 分数線より十分下にある（y座標が大きい）
+                        else if (otherBox.cy() > fracCenterY + fracLine.h() * 0.5) {
+                            denominatorIndices.add(j);
+                        }
+                    }
+                }
+                
+                // 分子と分母が見つかった場合
+                if (!numeratorIndices.isEmpty() || !denominatorIndices.isEmpty()) {
+                    // 分子と分母をx座標でソート
+                    numeratorIndices.sort(Comparator.comparingInt(idx -> {
+                        DetSymbol s = tokenSymbols.get(idx);
+                        return s != null ? (int)(s.box.cx() * 1000) : 0;
+                    }));
+                    denominatorIndices.sort(Comparator.comparingInt(idx -> {
+                        DetSymbol s = tokenSymbols.get(idx);
+                        return s != null ? (int)(s.box.cx() * 1000) : 0;
+                    }));
+                    
+                    // 分子のトークンを集める
+                    StringBuilder numerator = new StringBuilder();
+                    for (int idx : numeratorIndices) {
+                        numerator.append(tokens.get(idx));
+                        used[idx] = true;
+                    }
+                    if (numerator.length() == 0) {
+                        numerator.append("1"); // 分子が空の場合は1とする
+                    }
+                    
+                    // 分母のトークンを集める
+                    StringBuilder denominator = new StringBuilder();
+                    for (int idx : denominatorIndices) {
+                        denominator.append(tokens.get(idx));
+                        used[idx] = true;
+                    }
+                    if (denominator.length() == 0) {
+                        denominator.append("1"); // 分母が空の場合は1とする
+                    }
+                    
+                    // (numerator)/(denominator)の形式で追加
+                    result.add("(");
+                    result.add(numerator.toString());
+                    result.add(")");
+                    result.add("/");
+                    result.add("(");
+                    result.add(denominator.toString());
+                    result.add(")");
+                    
+                    used[i] = true;
+                    continue;
+                }
+            }
+            
+            // 分数線でない、または分数として処理されなかった場合はそのまま追加
+            if (!used[i]) {
+                result.add(token);
+            }
+        }
+        
+        return result.isEmpty() ? tokens : result;
     }
     
     /**
@@ -367,41 +500,161 @@ public class SpatialToExpr {
     
     /**
      * 極限の処理（lim_{x→a}構造を検出）
+     * bbox情報を使ってlimの後に続く変数、矢印、収束値をセットで取得
      */
-    private List<String> processLimits(List<String> tokens, List<String> warnings) {
+    private List<String> processLimits(List<String> tokens, List<DetSymbol> tokenSymbols, List<String> warnings) {
+        if (tokens.size() != tokenSymbols.size()) {
+            // tokenSymbolsのサイズが一致しない場合は処理をスキップ
+            warnings.add("極限処理: tokenSymbolsのサイズが一致しません");
+            return tokens;
+        }
+        
         List<String> result = new ArrayList<>();
+        boolean[] used = new boolean[tokens.size()];
         
         for (int i = 0; i < tokens.size(); i++) {
-            // lim パターンを検出（簡易実装）
-            if (i < tokens.size() && tokens.get(i).equals("lim")) {
-                result.add("limit");
-                result.add("(");
-                // 次のトークンから式を探す（簡易実装）
-                int j = i + 1;
-                while (j < tokens.size() && !tokens.get(j).equals("(")) {
-                    j++;
-                }
-                if (j < tokens.size()) {
-                    // 括弧内の式をコピー
-                    int parenCount = 1;
-                    j++;
-                    while (j < tokens.size() && parenCount > 0) {
-                        if (tokens.get(j).equals("(")) parenCount++;
-                        if (tokens.get(j).equals(")")) parenCount--;
-                        if (parenCount > 0) {
-                            result.add(tokens.get(j));
+            if (used[i]) continue;
+            
+            String token = tokens.get(i);
+            DetSymbol symbol = tokenSymbols.get(i);
+            
+            // lim パターンを検出
+            if (token.equals("lim") && symbol != null) {
+                BBox limBox = symbol.box;
+                
+                // limの後に続く変数、矢印、収束値を探す
+                // limのbboxの右側にあるシンボルを探す
+                String variable = null;
+                String arrow = null;
+                String limitValue = null;
+                
+                // limの右側の範囲を定義（x座標がlimより右にあるシンボルを探す）
+                double limRight = limBox.x2;
+                double searchMargin = limBox.w() * 3.0; // 検索範囲を広めに
+                double searchRight = limRight + searchMargin;
+                
+                // 変数、矢印、収束値を探す（順序を保証するため、x座標でソート）
+                List<IndexedSymbol> candidates = new ArrayList<>();
+                for (int j = i + 1; j < tokens.size(); j++) {
+                    if (used[j] || tokenSymbols.get(j) == null) continue;
+                    
+                    DetSymbol otherSymbol = tokenSymbols.get(j);
+                    BBox otherBox = otherSymbol.box;
+                    String otherToken = tokens.get(j);
+                    
+                    // limの右側にあるシンボルをチェック
+                    if (otherBox.x1 >= limRight - searchMargin && otherBox.x1 <= searchRight) {
+                        // limのbboxとy座標が近い（同じ行にある）
+                        if (Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 2.0) {
+                            candidates.add(new IndexedSymbol(j, otherToken, otherBox));
                         }
-                        j++;
+                    }
+                    
+                    // limの範囲を超えたら終了
+                    if (otherBox.x1 > searchRight) {
+                        break;
                     }
                 }
+                
+                // x座標でソート
+                candidates.sort(Comparator.comparingDouble(c -> c.box.cx()));
+                
+                // 変数、矢印、収束値を順番に探す
+                int limitValueIndex = -1;
+                for (IndexedSymbol candidate : candidates) {
+                    String otherToken = candidate.token;
+                    
+                    // 変数（小文字アルファベット1文字）
+                    if (variable == null && isVariable(otherToken)) {
+                        variable = otherToken;
+                        used[candidate.index] = true;
+                    }
+                    // 矢印（→）- 変数の後にある必要がある
+                    else if (arrow == null && otherToken.equals("→") && variable != null) {
+                        arrow = otherToken;
+                        used[candidate.index] = true;
+                    }
+                    // 収束値（数字または変数）- 矢印の後にある必要がある
+                    else if (limitValue == null && arrow != null && 
+                             (isNumberLike(otherToken) || isVariable(otherToken))) {
+                        limitValue = otherToken;
+                        limitValueIndex = candidate.index;
+                        used[candidate.index] = true;
+                        // 収束値が見つかっても続ける（式全体を取得するため）
+                    }
+                }
+                
+                // limの後に続く式全体を取得（収束値の後から式の終わりまで）
+                List<Integer> expressionIndices = new ArrayList<>();
+                if (limitValueIndex >= 0) {
+                    // 収束値の後から、limのbboxの右側にある式全体を取得
+                    double expressionStartX = limRight + searchMargin;
+                    for (int j = limitValueIndex + 1; j < tokens.size(); j++) {
+                        if (used[j] || tokenSymbols.get(j) == null) continue;
+                        
+                        DetSymbol otherSymbol = tokenSymbols.get(j);
+                        BBox otherBox = otherSymbol.box;
+                        
+                        // limのbboxとy座標が近い（同じ行または下の行にある）
+                        // 式はlimの下にあることが多い
+                        if (otherBox.x1 >= expressionStartX && 
+                            Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 3.0) {
+                            expressionIndices.add(j);
+                        } else if (otherBox.x1 > expressionStartX + limBox.w() * 5.0) {
+                            // 式の範囲を超えたら終了
+                            break;
+                        }
+                    }
+                }
+                
+                // limit関数の形式で追加: limit(limitValue, expression)
+                result.add("limit");
+                result.add("(");
+                
+                if (variable != null && arrow != null && limitValue != null) {
+                    // 変数、矢印、収束値がすべて見つかった場合
+                    // limit(limitValue, expression)の形式
+                    result.add(limitValue);
+                    
+                    // 式がある場合は追加
+                    if (!expressionIndices.isEmpty()) {
+                        result.add(",");
+                        // 式を括弧で囲む
+                        result.add("(");
+                        for (int idx : expressionIndices) {
+                            result.add(tokens.get(idx));
+                            used[idx] = true;
+                        }
+                        result.add(")");
+                    } else {
+                        // 式がない場合、変数xをそのまま使用（簡易実装）
+                        result.add(",");
+                        result.add("x");
+                    }
+                } else if (limitValue != null) {
+                    // 収束値のみ見つかった場合
+                    result.add(limitValue);
+                    result.add(",");
+                    result.add("x");
+                } else {
+                    // 何も見つからなかった場合、警告を出してそのまま続ける
+                    warnings.add("極限処理: limの後に変数、矢印、収束値が見つかりませんでした");
+                    result.add("0");
+                    result.add(",");
+                    result.add("x");
+                }
+                
                 result.add(")");
-                i = j - 1;
+                used[i] = true;
             } else {
-                result.add(tokens.get(i));
+                // limでない場合はそのまま追加
+                if (!used[i]) {
+                    result.add(token);
+                }
             }
         }
         
-        return result;
+        return result.isEmpty() ? tokens : result;
     }
 
     private boolean looksLikeSuperscript(DetSymbol base, DetSymbol cand) {
