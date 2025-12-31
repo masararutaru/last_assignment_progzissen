@@ -508,125 +508,149 @@ public class SpatialToExpr {
     private List<String> fixParenMismatch(List<String> tokens, List<String> warnings) {
         List<String> result = new ArrayList<>(tokens);
         
-        // 括弧のバランスを計算
-        int openCount = 0;
-        int closeCount = 0;
-        for (String token : result) {
-            if (token.equals("(")) openCount++;
-            if (token.equals(")")) closeCount++;
-        }
+        // 最大で10回まで修正を試みる（無限ループ防止）
+        int maxIterations = 10;
+        int iteration = 0;
         
-        // 開き括弧が余っている場合の修正
-        if (openCount > closeCount) {
-            int excess = openCount - closeCount;
-            int fixedCount = 0;
-            
-            // 優先度1: 左から右に走査して、連続する((の後半を)に修正（最も確実）
-            int parenBalance = 0;
-            for (int i = 0; i < result.size() && fixedCount < excess; i++) {
-                String token = result.get(i);
-                
-                if (token.equals("(")) {
-                    parenBalance++;
-                    
-                    // 次のトークンも(で、かつ括弧のバランスが1以上（開き括弧が余っている）場合
-                    if (i + 1 < result.size() && result.get(i + 1).equals("(") && parenBalance > 0) {
-                        // 後半の(を)に修正
-                        result.set(i + 1, ")");
-                        fixedCount++;
-                        parenBalance--;  // 修正したのでバランスを調整
-                        warnings.add(String.format("括弧の対応を修正: 連続する((の後半を)に変更（位置%d）", i + 1));
-                        i++; // 修正したトークンをスキップ
-                    }
-                } else if (token.equals(")")) {
-                    parenBalance--;
-                    if (parenBalance < 0) {
-                        parenBalance = 0;
-                    }
-                }
+        while (iteration < maxIterations) {
+            // 括弧のバランスを計算
+            int openCount = 0;
+            int closeCount = 0;
+            for (String token : result) {
+                if (token.equals("(")) openCount++;
+                if (token.equals(")")) closeCount++;
             }
             
-            // 優先度2: まだ余っている場合、右から左に走査して修正
-            if (fixedCount < excess) {
-                parenBalance = 0;
-                for (int i = result.size() - 1; i >= 0 && fixedCount < excess; i--) {
+            // バランスが取れていれば終了
+            if (openCount == closeCount) {
+                break;
+            }
+            
+            boolean fixed = false;
+            
+            // 開き括弧が余っている場合の修正
+            if (openCount > closeCount) {
+                int excess = openCount - closeCount;
+                int fixedCount = 0;
+                
+                // 優先度1: 左から右に走査して、連続する((の後半を)に修正（最も確実）
+                int parenBalance = 0;
+                for (int i = 0; i < result.size() && fixedCount < excess; i++) {
                     String token = result.get(i);
                     
-                    if (token.equals(")")) {
+                    if (token.equals("(")) {
                         parenBalance++;
-                    } else if (token.equals("(")) {
-                        if (parenBalance == 0 && fixedCount < excess) {
-                            // 対応する閉じ括弧がない開き括弧を閉じ括弧に修正
-                            result.set(i, ")");
+                        
+                        // 次のトークンも(で、かつ括弧のバランスが1以上（開き括弧が余っている）場合
+                        if (i + 1 < result.size() && result.get(i + 1).equals("(") && parenBalance > 0) {
+                            // 後半の(を)に修正
+                            result.set(i + 1, ")");
                             fixedCount++;
-                            warnings.add(String.format("括弧の対応を修正: 未対応の(を)に変更（位置%d、右から）", i));
+                            parenBalance--;  // 修正したのでバランスを調整
+                            warnings.add(String.format("括弧の対応を修正: 連続する((の後半を)に変更（位置%d）", i + 1));
+                            i++; // 修正したトークンをスキップ
+                        }
+                    } else if (token.equals(")")) {
+                        parenBalance--;
+                        if (parenBalance < 0) {
+                            parenBalance = 0;
+                        }
+                    }
+                }
+                
+                // 優先度2: まだ余っている場合、右から左に走査して修正
+                if (fixedCount < excess) {
+                    parenBalance = 0;
+                    for (int i = result.size() - 1; i >= 0 && fixedCount < excess; i--) {
+                        String token = result.get(i);
+                        
+                        if (token.equals(")")) {
+                            parenBalance++;
+                        } else if (token.equals("(")) {
+                            if (parenBalance == 0 && fixedCount < excess) {
+                                // 対応する閉じ括弧がない開き括弧を閉じ括弧に修正
+                                result.set(i, ")");
+                                fixedCount++;
+                                warnings.add(String.format("括弧の対応を修正: 未対応の(を)に変更（位置%d、右から）", i));
+                            } else {
+                                parenBalance--;
+                            }
+                        }
+                    }
+                }
+                if (fixedCount > 0) {
+                    fixed = true;
+                }
+            }
+            // 閉じ括弧が余っている場合の修正
+            else if (closeCount > openCount) {
+                int excess = closeCount - openCount;
+                int fixedCount = 0;
+                
+                // 優先度1: 左から右に走査して、連続する))の前半を(に修正（最も確実）
+                int parenBalance = 0;
+                for (int i = 0; i < result.size() && fixedCount < excess; i++) {
+                    String token = result.get(i);
+                    
+                    if (token.equals("(")) {
+                        parenBalance++;
+                    } else if (token.equals(")")) {
+                        // 対応する開き括弧がない閉じ括弧をチェック
+                        if (parenBalance <= 0) {
+                            // 次のトークンも)で、かつ括弧のバランスが0以下（閉じ括弧が余っている）場合
+                            if (i + 1 < result.size() && result.get(i + 1).equals(")") && fixedCount < excess) {
+                                // 前半の)を(に修正
+                                result.set(i, "(");
+                                fixedCount++;
+                                parenBalance++;  // 修正したのでバランスを調整
+                                warnings.add(String.format("括弧の対応を修正: 連続する))の前半を(に変更（位置%d）", i));
+                            } else if (fixedCount < excess) {
+                                // 単独の未対応の)を(に修正
+                                result.set(i, "(");
+                                fixedCount++;
+                                parenBalance++;
+                                warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d）", i));
+                            }
                         } else {
                             parenBalance--;
                         }
                     }
                 }
-            }
-        }
-        // 閉じ括弧が余っている場合の修正
-        else if (closeCount > openCount) {
-            int excess = closeCount - openCount;
-            int fixedCount = 0;
-            
-            // 優先度1: 左から右に走査して、連続する))の前半を(に修正（最も確実）
-            int parenBalance = 0;
-            for (int i = 0; i < result.size() && fixedCount < excess; i++) {
-                String token = result.get(i);
                 
-                if (token.equals("(")) {
-                    parenBalance++;
-                } else if (token.equals(")")) {
-                    // 対応する開き括弧がない閉じ括弧をチェック
-                    if (parenBalance <= 0) {
-                        // 次のトークンも)で、かつ括弧のバランスが0以下（閉じ括弧が余っている）場合
-                        if (i + 1 < result.size() && result.get(i + 1).equals(")") && fixedCount < excess) {
-                            // 前半の)を(に修正
-                            result.set(i, "(");
-                            fixedCount++;
-                            parenBalance++;  // 修正したのでバランスを調整
-                            warnings.add(String.format("括弧の対応を修正: 連続する))の前半を(に変更（位置%d）", i));
-                        } else if (fixedCount < excess) {
-                            // 単独の未対応の)を(に修正
-                            result.set(i, "(");
-                            fixedCount++;
+                // 優先度2: まだ余っている場合、右から左に走査して修正
+                if (fixedCount < excess) {
+                    // 右から左に走査して、対応する開き括弧がない閉じ括弧を開き括弧に修正
+                    // 括弧のバランスを右から左に計算（逆方向）
+                    parenBalance = 0;
+                    for (int i = result.size() - 1; i >= 0 && fixedCount < excess; i--) {
+                        String token = result.get(i);
+                        
+                        // 右から見ると、開き括弧は閉じ括弧として、閉じ括弧は開き括弧として扱う
+                        if (token.equals("(")) {
+                            // 右から見ると、開き括弧は閉じ括弧として扱う
                             parenBalance++;
-                            warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d）", i));
+                        } else if (token.equals(")")) {
+                            // 右から見ると、閉じ括弧は開き括弧として扱う
+                            if (parenBalance == 0 && fixedCount < excess) {
+                                // 対応する開き括弧がない閉じ括弧を開き括弧に修正
+                                result.set(i, "(");
+                                fixedCount++;
+                                warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d、右から）", i));
+                            } else if (parenBalance > 0) {
+                                parenBalance--;
+                            }
                         }
-                    } else {
-                        parenBalance--;
                     }
                 }
+                fixed = true;
             }
             
-            // 優先度2: まだ余っている場合、右から左に走査して修正
-            if (fixedCount < excess) {
-                // 右から左に走査して、対応する開き括弧がない閉じ括弧を開き括弧に修正
-                // 括弧のバランスを右から左に計算（逆方向）
-                parenBalance = 0;
-                for (int i = result.size() - 1; i >= 0 && fixedCount < excess; i--) {
-                    String token = result.get(i);
-                    
-                    // 右から見ると、開き括弧は閉じ括弧として、閉じ括弧は開き括弧として扱う
-                    if (token.equals("(")) {
-                        // 右から見ると、開き括弧は閉じ括弧として扱う
-                        parenBalance++;
-                    } else if (token.equals(")")) {
-                        // 右から見ると、閉じ括弧は開き括弧として扱う
-                        if (parenBalance == 0 && fixedCount < excess) {
-                            // 対応する開き括弧がない閉じ括弧を開き括弧に修正
-                            result.set(i, "(");
-                            fixedCount++;
-                            warnings.add(String.format("括弧の対応を修正: 未対応の)を(に変更（位置%d、右から）", i));
-                        } else if (parenBalance > 0) {
-                            parenBalance--;
-                        }
-                    }
-                }
+            // 修正が行われなかった場合は終了
+            if (!fixed) {
+                break;
             }
+            
+            iteration++;
         }
         
         return result;
