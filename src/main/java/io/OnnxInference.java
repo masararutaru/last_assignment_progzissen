@@ -447,7 +447,7 @@ public class OnnxInference implements AutoCloseable {
                 // 5. 有効なbboxかチェック
                 if (x2 > x1 && y2 > y1 && w_unpadded > 0 && h_unpadded > 0) {
                     BBox bbox = new BBox(x1, y1, x2, y2);
-                    candidates.add(new DetectionCandidate(bestClass, maxScore, bbox));
+                    candidates.add(new DetectionCandidate(bestClass, maxScore, bbox, secondBestClass, secondBestScore));
                     if (i < 5) {
                         System.out.println(String.format("    ✓ bbox有効: x1=%.1f y1=%.1f x2=%.1f y2=%.1f", x1, y1, x2, y2));
                     }
@@ -495,6 +495,31 @@ public class OnnxInference implements AutoCloseable {
             try {
                 String cls = labelMap.getClassLabel(cand.classId);
                 String token = labelMap.getToken(cls);
+                
+                // デバッグ: クラスIDとマッピングされたトークンを表示（最初の10個のみ）
+                if (result.size() < 10) {
+                    if (cand.secondBestClass >= 0) {
+                        System.out.println(String.format("[DEBUG] クラスID %d → クラス名 '%s' → トークン '%s' (スコア=%.3f, 2位: class=%d score=%.3f)", 
+                            cand.classId, cls, token, cand.score, cand.secondBestClass, cand.secondBestScore));
+                    } else {
+                        System.out.println(String.format("[DEBUG] クラスID %d → クラス名 '%s' → トークン '%s' (スコア=%.3f, 2位: なし)", 
+                            cand.classId, cls, token, cand.score));
+                    }
+                }
+                
+                // pが9に誤認識される問題を補正
+                // クラスID 9（"9"）として認識されたが、2位がクラスID 25（"p"）でスコアが近い場合、pを優先
+                if (cand.classId == 9 && cand.secondBestClass == 25 && cand.secondBestScore > 0) {
+                    double ratio = cand.score / (cand.secondBestScore + 0.0001);  // 0除算防止
+                    if (ratio < 1.3) {  // スコア差が30%未満ならpを優先
+                        // pを優先
+                        cls = labelMap.getClassLabel(25);
+                        token = labelMap.getToken(cls);
+                        System.out.println(String.format("[補正] クラスID 9（'9'）をクラスID 25（'p'）に補正 (スコア比=%.2f, 元スコア=%.3f → 補正後スコア=%.3f)", 
+                            ratio, cand.score, cand.secondBestScore));
+                    }
+                }
+                
                 result.add(new DetSymbol(cls, token, cand.score, cand.bbox));
             } catch (IllegalArgumentException e) {
                 System.err.println(String.format("[WARN] クラスID %d の処理に失敗: %s (スコア=%.3f)", 
@@ -656,11 +681,15 @@ public class OnnxInference implements AutoCloseable {
         final int classId;
         final double score;
         final BBox bbox;
+        final int secondBestClass;  // 2位のクラスID（補正に使用）
+        final double secondBestScore;  // 2位のスコア
         
-        DetectionCandidate(int classId, double score, BBox bbox) {
+        DetectionCandidate(int classId, double score, BBox bbox, int secondBestClass, double secondBestScore) {
             this.classId = classId;
             this.score = score;
             this.bbox = bbox;
+            this.secondBestClass = secondBestClass;
+            this.secondBestScore = secondBestScore;
         }
     }
     
