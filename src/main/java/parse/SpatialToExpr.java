@@ -151,26 +151,29 @@ public class SpatialToExpr {
         // 9) 極限の処理（lim_{x→a}構造を検出）
         tokens = processLimits(tokens, warnings);
 
-        // 10) 暗黙の掛け算を挿入（めちゃ大事）
+        // 10) 括弧の対応を修正（)が(に誤認識される問題に対処）
+        // 暗黙の掛け算を挿入する前に括弧の対応を修正する必要がある
+        List<String> correctedParens = fixParenMismatch(tokens, warnings);
+
+        // 11) 暗黙の掛け算を挿入（めちゃ大事）
         List<String> withMul = new ArrayList<>();
-        for (int k = 0; k < tokens.size(); k++) {
-            String a = tokens.get(k);
+        for (int k = 0; k < correctedParens.size(); k++) {
+            String a = correctedParens.get(k);
             withMul.add(a);
-            if (k + 1 < tokens.size()) {
-                String b = tokens.get(k + 1);
-                DetSymbol symA = k < tokenSymbols.size() ? tokenSymbols.get(k) : null;
-                DetSymbol symB = k + 1 < tokenSymbols.size() ? tokenSymbols.get(k + 1) : null;
+            if (k + 1 < correctedParens.size()) {
+                String b = correctedParens.get(k + 1);
+                // tokenSymbolsのインデックスは元のtokensに対応しているため、調整が必要
+                // 簡易的にはnullを渡す（位置情報は使わない）
+                DetSymbol symA = null;
+                DetSymbol symB = null;
                 if (needImplicitMul(a, b, symA, symB)) {
                     withMul.add("*");
                 }
             }
         }
 
-        // 11) 括弧の対応を修正（)が(に誤認識される問題に対処）
-        List<String> correctedParens = fixParenMismatch(withMul, warnings);
-
         // 12) 文字列化
-        String expr = String.join("", correctedParens);
+        String expr = String.join("", withMul);
 
         // 13) ちょいデバッグしやすく
         if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
