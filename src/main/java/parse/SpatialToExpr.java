@@ -460,17 +460,9 @@ public class SpatialToExpr {
         if (isFunc(a) && b.equals("(")) return false;
         if (a.equals("sqrt") && b.equals("(")) return false;
 
-        // 数字同士の場合：連続している（近い位置にある）場合は掛け算を挿入しない
+        // 数字同士の場合は掛け算を入れない（完全に禁止）
         if (isNumberLike(a) && isNumberLike(b)) {
-            if (symA != null && symB != null) {
-                // 2つの数字が近い位置にあるかチェック
-                double distance = symB.box.x1 - symA.box.x2; // 右端から左端までの距離
-                double avgWidth = (symA.box.w() + symB.box.w()) / 2.0;
-                // 平均幅の0.5倍以内なら連続していると判断
-                if (distance <= avgWidth * 0.5) {
-                    return false; // 連続しているので掛け算を挿入しない
-                }
-            }
+            return false;
         }
 
         // 例: ")" "(" → * を入れる（ただし上で既に除外されている）
