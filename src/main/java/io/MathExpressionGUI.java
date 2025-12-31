@@ -17,7 +17,7 @@ import ast.*;
  */
 public class MathExpressionGUI extends Frame implements ActionListener {
     
-    private static final String MODEL_PATH = "assets/model.onnx";
+    private static final String MODEL_PATH = "assets/model_v3.onnx";
     private static final String OUTPUT_DIR = "samples/images";
     
     // GUIコンポーネント

@@ -6,7 +6,7 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
     # Dockerコンテナ内: cd /app
     # ローカル環境: プロジェクトルート（pom.xmlがあるディレクトリ）に移動
     
-    # assetsディレクトリ内のptファイルから変換（--output省略可、自動でassets/model.onnxに出力）
+    # assetsディレクトリ内のptファイルから変換（--output省略可、自動でassets/model_v3.onnxに出力）
     python python/export_onnx.py \\
       --checkpoint assets/best.pt \\
       --verify
@@ -14,7 +14,7 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
     # 別のパスから変換
     python python/export_onnx.py \\
       --checkpoint assets/model.pt \\
-      --output assets/model.onnx \\
+      --output assets/model_v3.onnx \\
       --verify
 
 注意:
@@ -22,7 +22,7 @@ ONNX形式へのモデル書き出しスクリプト（YOLOv5対応）
     - YOLOv5公式のexport.pyを使用します（ultralytics/YOLOv8は使用しません）
     - NMS や TopK などの後処理はモデル内部に入れず、Java側で実装すること
     - 入力サイズは640x640を推奨（YOLOv5のデフォルト）
-    - プロジェクトルートから実行すると、自動的にassets/model.onnxに出力されます
+    - プロジェクトルートから実行すると、自動的にassets/model_v3.onnxに出力されます
     - ptファイルはassetsディレクトリに配置してください
 """
 
@@ -245,7 +245,7 @@ Examples:
   # Dockerコンテナ内: cd /app
   # ローカル環境: プロジェクトルート（pom.xmlがあるディレクトリ）に移動
   
-  # assetsディレクトリ内のptファイルから変換（--output省略可、自動でassets/model.onnxに出力）
+  # assetsディレクトリ内のptファイルから変換（--output省略可、自動でassets/model_v3.onnxに出力）
   python python/export_onnx.py \\
     --checkpoint assets/best.pt \\
     --verify
@@ -253,14 +253,14 @@ Examples:
   # 別のパスから変換
   python python/export_onnx.py \\
     --checkpoint assets/model.pt \\
-    --output assets/model.onnx \\
+    --output assets/model_v3.onnx \\
     --verify
   
   # python/ディレクトリから実行する場合
   cd python
   python export_onnx.py \\
     --checkpoint ../assets/best.pt \\
-    --output ../assets/model.onnx \\
+    --output ../assets/model_v3.onnx \\
     --verify
 
 Note:
@@ -280,7 +280,7 @@ Note:
         '--output',
         type=str,
         default=None,
-        help='Output ONNX file path (default: auto-detected project_root/assets/model.onnx)'
+        help='Output ONNX file path (default: auto-detected project_root/assets/model_v3.onnx)'
     )
     parser.add_argument(
         '--imgsz',
@@ -312,7 +312,7 @@ Note:
     
     # 出力パスの解決（デフォルト値の設定）
     if args.output is None:
-        args.output = str(project_root / "assets" / "model.onnx")
+        args.output = str(project_root / "assets" / "model_v3.onnx")
     
     # 相対パスの場合はプロジェクトルート基準に変換
     output_path = Path(args.output)
