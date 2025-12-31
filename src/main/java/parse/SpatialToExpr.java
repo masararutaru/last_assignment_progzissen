@@ -535,6 +535,32 @@ public class SpatialToExpr {
                     debugInfo.append(", 分数線y=").append(String.format("%.1f", fracCenterY));
                     warnings.add(debugInfo.toString());
                     
+                    // 分数線の前後にある数字で、分数線の範囲外にあるものを除外
+                    // これにより、分数線の外側の数字（例: 1, 3, 1 4）が結果に追加されなくなる
+                    // x座標のみで判定（分数線の範囲外の数字は除外）
+                    // 重要: 分子・分母を集める前に実行する必要がある
+                    for (int j = 0; j < tokens.size(); j++) {
+                        if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
+                        
+                        DetSymbol otherSymbol = tokenSymbols.get(j);
+                        BBox otherBox = otherSymbol.box;
+                        String otherToken = tokens.get(j);
+                        
+                        // 数字のみをチェック
+                        if (!isNumberLike(otherToken)) continue;
+                        
+                        // 分数線のx座標範囲外にある数字を除外
+                        double otherCenterX = otherBox.cx();
+                        
+                        // 分数線の範囲外にある数字は除外（usedにマークするが、結果には追加しない）
+                        if (otherCenterX < fracLeft || otherCenterX > fracRight) {
+                            // 分数線の範囲外にある数字は除外
+                            used[j] = true;
+                            warnings.add(String.format("分数処理: 分数線の外側の数字 '%s' を除外 (x=%.1f, 分数線範囲=%.1f-%.1f)", 
+                                    otherToken, otherCenterX, fracLeft, fracRight));
+                        }
+                    }
+                    
                     // 分子のトークンを集める（数字の連続判定を追加）
                     List<String> numeratorTokens = new ArrayList<>();
                     for (int idx : numeratorIndices) {
@@ -575,31 +601,6 @@ public class SpatialToExpr {
                     result.add(")");
                     
                     used[i] = true;
-                    
-                    // 分数線の前後にある数字で、分数線の範囲外にあるものを除外
-                    // これにより、分数線の外側の数字（例: 1, 3, 1 4）が結果に追加されなくなる
-                    // x座標のみで判定（分数線の範囲外の数字は除外）
-                    for (int j = 0; j < tokens.size(); j++) {
-                        if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
-                        
-                        DetSymbol otherSymbol = tokenSymbols.get(j);
-                        BBox otherBox = otherSymbol.box;
-                        String otherToken = tokens.get(j);
-                        
-                        // 数字のみをチェック
-                        if (!isNumberLike(otherToken)) continue;
-                        
-                        // 分数線のx座標範囲外にある数字を除外
-                        double otherCenterX = otherBox.cx();
-                        
-                        // 分数線の範囲外にある数字は除外（usedにマークするが、結果には追加しない）
-                        if (otherCenterX < fracLeft || otherCenterX > fracRight) {
-                            // 分数線の範囲外にある数字は除外
-                            used[j] = true;
-                            warnings.add(String.format("分数処理: 分数線の外側の数字 '%s' を除外 (x=%.1f, 分数線範囲=%.1f-%.1f)", 
-                                    otherToken, otherCenterX, fracLeft, fracRight));
-                        }
-                    }
                     
                     continue;
                 }
