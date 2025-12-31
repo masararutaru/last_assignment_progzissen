@@ -12,6 +12,7 @@ public class Parser {
             case "/": return 3;
             case "+":
             case "-": return 2;
+            case "→": return 1; // 矢印は低優先度
             default: throw new IllegalArgumentException("Unknown op: " + op);
         }
     }
@@ -193,6 +194,11 @@ public class Parser {
                 return;
             case "^":
                 valStack.push(new Pow(List.of(a, b)));
+                return;
+            case "→":
+                // 矢印はlimの処理で使われるだけで、実際の計算では使われない
+                // 左側の値をそのまま返す（簡易実装）
+                valStack.push(a);
                 return;
             default:
                 throw new IllegalArgumentException("Unknown op: " + op);

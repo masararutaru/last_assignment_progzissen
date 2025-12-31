@@ -14,20 +14,6 @@ public class SpatialToExpr {
         }
     }
     
-    /**
-     * インデックス、トークン、bboxを保持する内部クラス
-     */
-    private static class IndexedSymbol {
-        final int index;
-        final String token;
-        final BBox box;
-        
-        IndexedSymbol(int index, String token, BBox box) {
-            this.index = index;
-            this.token = token;
-            this.box = box;
-        }
-    }
 
     public Result buildExprString(Detection det) {
         List<String> warnings = new ArrayList<>();
@@ -523,72 +509,53 @@ public class SpatialToExpr {
                 BBox limBox = symbol.box;
                 
                 // limの後に続く変数、矢印、収束値を探す
-                // limのbboxの右側にあるシンボルを探す
+                // トークンは既にx座標でソートされているので、単純に次のトークンをチェック
                 String variable = null;
                 String arrow = null;
                 String limitValue = null;
+                int limitValueIndex = -1;
                 
-                // limの右側の範囲を定義（x座標がlimより右にあるシンボルを探す）
-                double limRight = limBox.x2;
-                double searchMargin = limBox.w() * 3.0; // 検索範囲を広めに
-                double searchRight = limRight + searchMargin;
-                
-                // 変数、矢印、収束値を探す（順序を保証するため、x座標でソート）
-                List<IndexedSymbol> candidates = new ArrayList<>();
-                for (int j = i + 1; j < tokens.size(); j++) {
+                // まず、bbox情報を使わずに、単純に次のトークンを順番にチェック
+                for (int j = i + 1; j < tokens.size() && j < i + 10; j++) { // 最大10個までチェック
                     if (used[j] || tokenSymbols.get(j) == null) continue;
                     
+                    String otherToken = tokens.get(j);
                     DetSymbol otherSymbol = tokenSymbols.get(j);
                     BBox otherBox = otherSymbol.box;
-                    String otherToken = tokens.get(j);
                     
-                    // limの右側にあるシンボルをチェック
-                    if (otherBox.x1 >= limRight - searchMargin && otherBox.x1 <= searchRight) {
-                        // limのbboxとy座標が近い（同じ行にある）
-                        if (Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 2.0) {
-                            candidates.add(new IndexedSymbol(j, otherToken, otherBox));
-                        }
-                    }
+                    // bbox情報も確認（同じ行にあることを確認）
+                    boolean sameRow = Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 3.0;
+                    boolean rightSide = otherBox.x1 >= limBox.x1;
                     
-                    // limの範囲を超えたら終了
-                    if (otherBox.x1 > searchRight) {
-                        break;
+                    if (!sameRow && !rightSide) {
+                        // 同じ行になく、右側にもない場合はスキップ
+                        continue;
                     }
-                }
-                
-                // x座標でソート
-                candidates.sort(Comparator.comparingDouble(c -> c.box.cx()));
-                
-                // 変数、矢印、収束値を順番に探す
-                int limitValueIndex = -1;
-                for (IndexedSymbol candidate : candidates) {
-                    String otherToken = candidate.token;
                     
                     // 変数（小文字アルファベット1文字）
                     if (variable == null && isVariable(otherToken)) {
                         variable = otherToken;
-                        used[candidate.index] = true;
+                        used[j] = true;
                     }
                     // 矢印（→）- 変数の後にある必要がある
                     else if (arrow == null && otherToken.equals("→") && variable != null) {
                         arrow = otherToken;
-                        used[candidate.index] = true;
+                        used[j] = true;
                     }
                     // 収束値（数字または変数）- 矢印の後にある必要がある
                     else if (limitValue == null && arrow != null && 
                              (isNumberLike(otherToken) || isVariable(otherToken))) {
                         limitValue = otherToken;
-                        limitValueIndex = candidate.index;
-                        used[candidate.index] = true;
-                        // 収束値が見つかっても続ける（式全体を取得するため）
+                        limitValueIndex = j;
+                        used[j] = true;
+                        break; // 収束値が見つかったら終了
                     }
                 }
                 
                 // limの後に続く式全体を取得（収束値の後から式の終わりまで）
                 List<Integer> expressionIndices = new ArrayList<>();
                 if (limitValueIndex >= 0) {
-                    // 収束値の後から、limのbboxの右側にある式全体を取得
-                    double expressionStartX = limRight + searchMargin;
+                    // 収束値の後から、使用されていないトークンを式として取得
                     for (int j = limitValueIndex + 1; j < tokens.size(); j++) {
                         if (used[j] || tokenSymbols.get(j) == null) continue;
                         
@@ -597,10 +564,12 @@ public class SpatialToExpr {
                         
                         // limのbboxとy座標が近い（同じ行または下の行にある）
                         // 式はlimの下にあることが多い
-                        if (otherBox.x1 >= expressionStartX && 
-                            Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 3.0) {
+                        boolean sameRow = Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 4.0;
+                        boolean belowRow = otherBox.cy() > limBox.cy() - limBox.h() * 0.5;
+                        
+                        if (sameRow || belowRow) {
                             expressionIndices.add(j);
-                        } else if (otherBox.x1 > expressionStartX + limBox.w() * 5.0) {
+                        } else if (otherBox.x1 > limBox.x2 + limBox.w() * 3.0) {
                             // 式の範囲を超えたら終了
                             break;
                         }
