@@ -56,7 +56,14 @@ public class Parser {
 
                 case RPAREN:
                     while (!opStack.isEmpty() && !opStack.peek().equals("(")) {
-                        applyOp(opStack.pop(), valStack);
+                        String op = opStack.pop();
+                        if (op.equals("u-")) {
+                            // 単項マイナスを適用
+                            applyUnaryNeg(valStack);
+                        } else {
+                            // 二項演算子を適用
+                            applyOp(op, valStack);
+                        }
                     }
                     if (opStack.isEmpty() || !opStack.peek().equals("(")) {
                         throw new IllegalArgumentException("Mismatched ')'");
