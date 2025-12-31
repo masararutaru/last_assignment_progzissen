@@ -518,33 +518,43 @@ public class SpatialToExpr {
                     debugInfo.append(", 分数線y=").append(String.format("%.1f", fracCenterY));
                     warnings.add(debugInfo.toString());
                     
-                    // 分子のトークンを集める
-                    StringBuilder numerator = new StringBuilder();
+                    // 分子のトークンを集める（数字の連続判定を追加）
+                    List<String> numeratorTokens = new ArrayList<>();
                     for (int idx : numeratorIndices) {
-                        numerator.append(tokens.get(idx));
+                        numeratorTokens.add(tokens.get(idx));
                         used[idx] = true;
                     }
-                    if (numerator.length() == 0) {
-                        numerator.append("1"); // 分子が空の場合は1とする
+                    // 数字の連続判定：連続する数字のみ結合
+                    numeratorTokens = mergeConsecutiveNumbers(numeratorTokens);
+                    if (numeratorTokens.isEmpty()) {
+                        numeratorTokens.add("1"); // 分子が空の場合は1とする
                     }
                     
-                    // 分母のトークンを集める
-                    StringBuilder denominator = new StringBuilder();
+                    // 分母のトークンを集める（数字の連続判定を追加）
+                    List<String> denominatorTokens = new ArrayList<>();
                     for (int idx : denominatorIndices) {
-                        denominator.append(tokens.get(idx));
+                        denominatorTokens.add(tokens.get(idx));
                         used[idx] = true;
                     }
-                    if (denominator.length() == 0) {
-                        denominator.append("1"); // 分母が空の場合は1とする
+                    // 数字の連続判定：連続する数字のみ結合
+                    denominatorTokens = mergeConsecutiveNumbers(denominatorTokens);
+                    if (denominatorTokens.isEmpty()) {
+                        denominatorTokens.add("1"); // 分母が空の場合は1とする
                     }
                     
                     // (numerator)/(denominator)の形式で追加
                     result.add("(");
-                    result.add(numerator.toString());
+                    // 分子のトークンを個別に追加（数字は既に結合済み）
+                    for (String numToken : numeratorTokens) {
+                        result.add(numToken);
+                    }
                     result.add(")");
                     result.add("/");
                     result.add("(");
-                    result.add(denominator.toString());
+                    // 分母のトークンを個別に追加（数字は既に結合済み）
+                    for (String denToken : denominatorTokens) {
+                        result.add(denToken);
+                    }
                     result.add(")");
                     
                     used[i] = true;
@@ -871,6 +881,38 @@ public class SpatialToExpr {
         if (t == null || t.isEmpty()) return false;
         for (int i = 0; i < t.length(); i++) if (!Character.isDigit(t.charAt(i))) return false;
         return true;
+    }
+    
+    /**
+     * 連続する数字のみを結合する
+     * 例: ["1", "1", "0", "(", "1", ")"] → ["110", "(", "1", ")"]
+     */
+    private List<String> mergeConsecutiveNumbers(List<String> tokens) {
+        if (tokens.isEmpty()) return tokens;
+        
+        List<String> result = new ArrayList<>();
+        StringBuilder currentNumber = new StringBuilder();
+        
+        for (String token : tokens) {
+            if (isNumberLike(token)) {
+                // 数字の場合は結合
+                currentNumber.append(token);
+            } else {
+                // 数字でない場合は、蓄積された数字を追加してから現在のトークンを追加
+                if (currentNumber.length() > 0) {
+                    result.add(currentNumber.toString());
+                    currentNumber.setLength(0);
+                }
+                result.add(token);
+            }
+        }
+        
+        // 最後に数字が残っている場合は追加
+        if (currentNumber.length() > 0) {
+            result.add(currentNumber.toString());
+        }
+        
+        return result;
     }
 
     private boolean isAtomEnd(String a) {
