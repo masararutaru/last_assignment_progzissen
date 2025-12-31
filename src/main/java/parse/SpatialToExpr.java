@@ -227,51 +227,18 @@ public class SpatialToExpr {
         List<String> correctedParens = fixParenMismatch(tokens, tokenSymbols, warnings);
 
         // 11) 暗黙の掛け算を挿入（めちゃ大事）
-        // 分数のパターン (分子)/(分母) を検出して、その前後では暗黙の掛け算を挿入しない
         List<String> withMul = new ArrayList<>();
         for (int k = 0; k < correctedParens.size(); k++) {
             String a = correctedParens.get(k);
             withMul.add(a);
             if (k + 1 < correctedParens.size()) {
                 String b = correctedParens.get(k + 1);
-                
-                // 分数のパターン (分子)/(分母) を検出
-                // パターン: ) / ( を見つける
-                // 分数の前（分数の開始位置より前）では暗黙の掛け算を挿入しない
-                boolean isBeforeFraction = false;
-                // 例: 2 ( 4 ) / ( 20 ) の場合、2 と ( の間では暗黙の掛け算を挿入しない
-                // 分数のパターンを検出: ( ... ) / ( ... )
-                if (b.equals("(")) {
-                    // この ( が分数の開始位置かチェック
-                    // 分数のパターン: ( ... ) / ( ... )
-                    int parenCount = 0;
-                    int j = k + 1;
-                    while (j < correctedParens.size()) {
-                        String tok = correctedParens.get(j);
-                        if (tok.equals("(")) parenCount++;
-                        if (tok.equals(")")) {
-                            parenCount--;
-                            if (parenCount == 0) {
-                                // 対応する ) が見つかった
-                                if (j + 1 < correctedParens.size() && correctedParens.get(j + 1).equals("/")) {
-                                    // 分数のパターンが見つかった
-                                    isBeforeFraction = true;
-                                }
-                                break;
-                            }
-                        }
-                        j++;
-                    }
-                }
-                
-                if (!isBeforeFraction) {
-                    // tokenSymbolsのインデックスは元のtokensに対応しているため、調整が必要
-                    // 簡易的にはnullを渡す（位置情報は使わない）
-                    DetSymbol symA = null;
-                    DetSymbol symB = null;
-                    if (needImplicitMul(a, b, symA, symB)) {
-                        withMul.add("*");
-                    }
+                // tokenSymbolsのインデックスは元のtokensに対応しているため、調整が必要
+                // 簡易的にはnullを渡す（位置情報は使わない）
+                DetSymbol symA = null;
+                DetSymbol symB = null;
+                if (needImplicitMul(a, b, symA, symB)) {
+                    withMul.add("*");
                 }
             }
         }
@@ -611,7 +578,7 @@ public class SpatialToExpr {
                     
                     // 分数線の前後にある数字で、分数線の範囲外にあるものを除外
                     // これにより、分数線の外側の数字（例: 1, 3, 1 4）が結果に追加されなくなる
-                    // x座標とy座標の両方を考慮して、分数線の範囲外にある数字のみを除外
+                    // x座標のみで判定（分数線の範囲外の数字は除外）
                     for (int j = 0; j < tokens.size(); j++) {
                         if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
                         
@@ -622,18 +589,15 @@ public class SpatialToExpr {
                         // 数字のみをチェック
                         if (!isNumberLike(otherToken)) continue;
                         
-                        // 分数線のx座標範囲外にある数字をチェック
+                        // 分数線のx座標範囲外にある数字を除外
                         double otherCenterX = otherBox.cx();
-                        double otherCenterY = otherBox.cy();
                         
-                        // 分数線の範囲外にある数字で、かつ分数線のy座標範囲外にある数字を除外
-                        // これにより、分数線の外側の数字（例: 1, 3, 1 4）が結果に追加されなくなる
-                        boolean isOutsideX = (otherCenterX < fracLeft || otherCenterX > fracRight);
-                        boolean isOutsideY = (otherCenterY < fracTop - threshold * 2 || otherCenterY > fracBottom + threshold * 2);
-                        
-                        if (isOutsideX && isOutsideY) {
-                            // 分数線の範囲外にある数字は除外（usedにマークするが、結果には追加しない）
+                        // 分数線の範囲外にある数字は除外（usedにマークするが、結果には追加しない）
+                        if (otherCenterX < fracLeft || otherCenterX > fracRight) {
+                            // 分数線の範囲外にある数字は除外
                             used[j] = true;
+                            warnings.add(String.format("分数処理: 分数線の外側の数字 '%s' を除外 (x=%.1f, 分数線範囲=%.1f-%.1f)", 
+                                    otherToken, otherCenterX, fracLeft, fracRight));
                         }
                     }
                     
