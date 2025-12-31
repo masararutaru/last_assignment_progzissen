@@ -14,6 +14,21 @@ public class SpatialToExpr {
         }
     }
     
+    /**
+     * 候補を保持する内部クラス
+     */
+    private static class Candidate {
+        final int index;
+        final String token;
+        final double x;
+        
+        Candidate(int index, String token, double x) {
+            this.index = index;
+            this.token = token;
+            this.x = x;
+        }
+    }
+    
 
     public Result buildExprString(Detection det) {
         List<String> warnings = new ArrayList<>();
@@ -368,10 +383,17 @@ public class SpatialToExpr {
                 List<Integer> denominatorIndices = new ArrayList<>();
                 
                 // 分数線のx座標範囲を拡張（左右のマージンを考慮）
-                double margin = fracLine.w() * 1.0; // マージンを広めに設定
-                double fracCenterY = fracLine.cy();
+                double margin = fracLine.w() * 1.5; // マージンを広めに設定
                 double fracLeft = fracLine.x1 - margin;
                 double fracRight = fracLine.x2 + margin;
+                
+                // 分数線のy座標範囲を取得
+                double fracTop = fracLine.y1;    // 分数線の上端
+                double fracBottom = fracLine.y2; // 分数線の下端
+                double fracCenterY = fracLine.cy();
+                
+                // 分子と分母の判定用の閾値（分数線の高さに基づく）
+                double threshold = Math.max(fracLine.h() * 0.3, 5.0); // 最小5ピクセル
                 
                 // すべてのシンボルをチェック
                 for (int j = 0; j < tokens.size(); j++) {
@@ -389,14 +411,21 @@ public class SpatialToExpr {
                     // x座標が分数線の範囲内にあるかチェック
                     double otherCenterX = otherBox.cx();
                     if (otherCenterX >= fracLeft && otherCenterX <= fracRight) {
-                        // 上にあるシンボル（分子）
-                        // 分数線より十分上にある（y座標が小さい）
-                        if (otherBox.cy() < fracCenterY - fracLine.h() * 0.5) {
+                        // y座標で分子・分母を判定
+                        double otherCenterY = otherBox.cy();
+                        double otherTop = otherBox.y1;
+                        double otherBottom = otherBox.y2;
+                        
+                        // 分子の判定：分数線の上にある（分数線の下端より上）
+                        // より柔軟に：分数線の中心より上で、かつ分数線と重ならない
+                        if (otherBottom < fracTop - threshold || 
+                            (otherCenterY < fracCenterY - threshold && otherBottom < fracTop)) {
                             numeratorIndices.add(j);
                         }
-                        // 下にあるシンボル（分母）
-                        // 分数線より十分下にある（y座標が大きい）
-                        else if (otherBox.cy() > fracCenterY + fracLine.h() * 0.5) {
+                        // 分母の判定：分数線の下にある（分数線の上端より下）
+                        // より柔軟に：分数線の中心より下で、かつ分数線と重ならない
+                        else if (otherTop > fracBottom + threshold || 
+                                 (otherCenterY > fracCenterY + threshold && otherTop > fracBottom)) {
                             denominatorIndices.add(j);
                         }
                     }
@@ -509,13 +538,14 @@ public class SpatialToExpr {
                 BBox limBox = symbol.box;
                 
                 // limの後に続く変数、矢印、収束値を探す
-                // トークンは既にx座標でソートされているので、単純に次のトークンをチェック
+                // トークンは既にx座標でソートされているので、x座標順にチェック
                 String variable = null;
                 String arrow = null;
                 String limitValue = null;
                 int limitValueIndex = -1;
                 
-                // まず、bbox情報を使わずに、単純に次のトークンを順番にチェック
+                // まず、limの右側にあるすべての候補を収集（x座標でソート済み）
+                List<Candidate> candidates = new ArrayList<>();
                 for (int j = i + 1; j < tokens.size() && j < i + 10; j++) { // 最大10個までチェック
                     if (used[j] || tokenSymbols.get(j) == null) continue;
                     
@@ -527,28 +557,68 @@ public class SpatialToExpr {
                     boolean sameRow = Math.abs(otherBox.cy() - limBox.cy()) < limBox.h() * 3.0;
                     boolean rightSide = otherBox.x1 >= limBox.x1;
                     
-                    if (!sameRow && !rightSide) {
-                        // 同じ行になく、右側にもない場合はスキップ
-                        continue;
+                    if (sameRow && rightSide) {
+                        candidates.add(new Candidate(j, otherToken, otherBox.cx()));
                     }
+                }
+                
+                // x座標でソート（既にソートされているはずだが、念のため）
+                candidates.sort(Comparator.comparingDouble(c -> c.x));
+                
+                // 順番にチェック：変数 → 矢印 → 収束値
+                // ただし、順序が x, 0, → の場合でも対応できるように柔軟に処理
+                for (Candidate candidate : candidates) {
+                    String otherToken = candidate.token;
                     
                     // 変数（小文字アルファベット1文字）
                     if (variable == null && isVariable(otherToken)) {
                         variable = otherToken;
-                        used[j] = true;
+                        used[candidate.index] = true;
                     }
-                    // 矢印（→）- 変数の後にある必要がある
-                    else if (arrow == null && otherToken.equals("→") && variable != null) {
-                        arrow = otherToken;
-                        used[j] = true;
+                }
+                
+                // 変数が見つかったら、その後に矢印を探す
+                if (variable != null) {
+                    for (Candidate candidate : candidates) {
+                        if (used[candidate.index]) continue;
+                        String otherToken = candidate.token;
+                        
+                        // 矢印（→）- 変数の後にある必要がある（x座標で）
+                        if (arrow == null && otherToken.equals("→")) {
+                            arrow = otherToken;
+                            used[candidate.index] = true;
+                            break;
+                        }
                     }
-                    // 収束値（数字または変数）- 矢印の後にある必要がある
-                    else if (limitValue == null && arrow != null && 
-                             (isNumberLike(otherToken) || isVariable(otherToken))) {
-                        limitValue = otherToken;
-                        limitValueIndex = j;
-                        used[j] = true;
-                        break; // 収束値が見つかったら終了
+                }
+                
+                // 矢印が見つかったら、その前後で収束値を探す
+                if (arrow != null) {
+                    // まず、矢印の位置を取得
+                    double arrowX = -1;
+                    for (Candidate candidate : candidates) {
+                        if (candidate.token.equals("→") && used[candidate.index]) {
+                            arrowX = candidate.x;
+                            break;
+                        }
+                    }
+                    
+                    // 矢印の前後で収束値を探す（順序が x, 0, → の場合でも対応）
+                    for (Candidate candidate : candidates) {
+                        if (used[candidate.index]) continue;
+                        String otherToken = candidate.token;
+                        
+                        // 収束値（数字または変数）
+                        if (limitValue == null && 
+                            (isNumberLike(otherToken) || isVariable(otherToken))) {
+                            // 矢印の前後にあることを確認（x座標で）
+                            if (Math.abs(candidate.x - arrowX) < limBox.w() * 5.0) {
+                                limitValue = otherToken;
+                                limitValueIndex = candidate.index;
+                                used[candidate.index] = true;
+                                break; // 収束値が見つかったら終了
+                            }
+                        }
                     }
                 }
                 
