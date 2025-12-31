@@ -549,9 +549,9 @@ public class SpatialToExpr {
                 // limの左側も含めて検索（変数がlimの左側にある場合がある）
                 List<Candidate> candidates = new ArrayList<>();
                 // より適切な範囲に調整
-                double searchMarginX = limBox.w() * 1.5; // limの左右の検索範囲（左側も含む）
-                double searchMarginY = limBox.h() * 2.5; // limの上下の検索範囲
-                double maxDistanceX = limBox.w() * 4.0; // 最大x距離（これより遠いものは除外）
+                double searchMarginX = limBox.w() * 2.0; // limの左右の検索範囲（左側も含む）
+                double searchMarginY = limBox.h() * 3.0; // limの上下の検索範囲（下に書かれる場合を考慮）
+                double maxDistanceX = limBox.w() * 5.0; // 最大x距離（これより遠いものは除外）
                 
                 for (int j = 0; j < tokens.size(); j++) {
                     if (j == i || used[j] || tokenSymbols.get(j) == null) continue;
@@ -565,8 +565,11 @@ public class SpatialToExpr {
                     double dx = otherBox.cx() - limBox.cx();
                     
                     // limの周辺（左右、上下）にあるシンボルを候補として追加
-                    // 左側も含めるが、範囲を制限
-                    if (dy < searchMarginY && Math.abs(dx) < maxDistanceX) {
+                    // 下に書かれる場合も考慮（y座標が下にある場合）
+                    boolean inYRange = dy < searchMarginY || otherBox.cy() > limBox.cy(); // 下にある場合も含む
+                    boolean inXRange = Math.abs(dx) < maxDistanceX;
+                    
+                    if (inYRange && inXRange) {
                         // 左側の場合は、より近いもののみ（変数がlimの左側にある場合がある）
                         if (dx < 0) {
                             // 左側: limの左側にあるが、あまり離れていないもの
@@ -582,6 +585,17 @@ public class SpatialToExpr {
                 
                 // x座標でソート（既にソートされているはずだが、念のため）
                 candidates.sort(Comparator.comparingDouble(c -> c.x));
+                
+                // デバッグ情報: 候補を警告に追加
+                if (!candidates.isEmpty()) {
+                    StringBuilder debugInfo = new StringBuilder();
+                    debugInfo.append("lim処理: 候補数=").append(candidates.size()).append(" [");
+                    for (Candidate c : candidates) {
+                        debugInfo.append(c.token).append("(").append(String.format("%.1f", c.x)).append(") ");
+                    }
+                    debugInfo.append("]");
+                    warnings.add(debugInfo.toString());
+                }
                 
                 // 順番にチェック：変数 → 矢印 → 収束値
                 // ただし、順序が x, 0, → の場合でも対応できるように柔軟に処理
@@ -695,7 +709,12 @@ public class SpatialToExpr {
                     result.add("x");
                 } else {
                     // 何も見つからなかった場合、警告を出してそのまま続ける
-                    warnings.add("極限処理: limの後に変数、矢印、収束値が見つかりませんでした");
+                    StringBuilder debugInfo = new StringBuilder();
+                    debugInfo.append("極限処理: limの後に変数、矢印、収束値が見つかりませんでした");
+                    if (variable != null) debugInfo.append(" (変数=").append(variable).append(")");
+                    if (arrow != null) debugInfo.append(" (矢印=→)");
+                    // limitValueはこの時点でnullなのでチェック不要
+                    warnings.add(debugInfo.toString());
                     result.add("0");
                     result.add(",");
                     result.add("x");

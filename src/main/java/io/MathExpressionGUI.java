@@ -307,8 +307,24 @@ public class MathExpressionGUI extends Frame implements ActionListener {
                     resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【認識した式】\n");
                     resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-                    resultArea.append("✗ パースエラー: " + parseEx.getMessage() + "\n");
-                    resultArea.append("式: " + inferredExpr + "\n\n");
+                    String errorMsg = parseEx.getMessage();
+                    if (errorMsg == null || errorMsg.isEmpty()) {
+                        errorMsg = parseEx.getClass().getSimpleName();
+                    }
+                    resultArea.append("✗ パースエラー: " + errorMsg + "\n");
+                    resultArea.append("式: " + inferredExpr + "\n");
+                    // スタックトレースの最初の数行を表示
+                    java.io.StringWriter sw = new java.io.StringWriter();
+                    java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+                    parseEx.printStackTrace(pw);
+                    String stackTrace = sw.toString();
+                    String[] lines = stackTrace.split("\n");
+                    int showLines = Math.min(5, lines.length);
+                    resultArea.append("\nスタックトレース（最初の" + showLines + "行）:\n");
+                    for (int k = 0; k < showLines; k++) {
+                        resultArea.append("  " + lines[k] + "\n");
+                    }
+                    resultArea.append("\n");
                     resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
                     resultArea.append("【計算結果】\n");
                     resultArea.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
