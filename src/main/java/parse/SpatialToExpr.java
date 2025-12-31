@@ -98,10 +98,30 @@ public class SpatialToExpr {
         // 2) ざっくり "同一行" を仮定（Phase1は1行のみ）
         //    将来: cyでクラスタリングして複数行対応
         s.sort(Comparator.comparingDouble(a -> a.box.cx()));
+        
+        // デバッグ情報: ソート後のシンボル列を表示
+        if (!s.isEmpty()) {
+            StringBuilder debugInfo = new StringBuilder();
+            debugInfo.append("ソート後のシンボル列: ");
+            for (int k = 0; k < Math.min(s.size(), 10); k++) {
+                debugInfo.append(s.get(k).token).append("(").append(String.format("%.1f", s.get(k).box.cx())).append(") ");
+            }
+            warnings.add(debugInfo.toString());
+        }
 
         // 3) 関数名のマージ（複数文字の関数名を1つのトークンにまとめる）
         // 例: 's','i','n' → "sin", 'l','o','g' → "log"
         List<DetSymbol> merged = mergeFunctionNames(s, warnings);
+        
+        // デバッグ情報: 関数名マージ後のシンボル列を表示
+        if (!merged.isEmpty()) {
+            StringBuilder debugInfo = new StringBuilder();
+            debugInfo.append("関数名マージ後のシンボル列: ");
+            for (int k = 0; k < Math.min(merged.size(), 10); k++) {
+                debugInfo.append(merged.get(k).token).append("(").append(String.format("%.1f", merged.get(k).box.cx())).append(") ");
+            }
+            warnings.add(debugInfo.toString());
+        }
         
         // 4) トークン列にしつつ、べき(右上)をまとめる
         // トークンとDetSymbolの対応を保持（数字の連続判定のため）
@@ -199,6 +219,9 @@ public class SpatialToExpr {
 
             i++;
         }
+        
+        // デバッグ情報: トークン列生成直後を表示
+        warnings.add("トークン列生成直後: " + String.join(" ", tokens));
         
         // デバッグ情報: べき乗処理後のトークン列を表示
         if (tokens.stream().anyMatch(t -> t.equals("^") || t.equals("/"))) {
