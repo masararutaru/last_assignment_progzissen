@@ -36,12 +36,14 @@ public class SpatialToExpr {
         final List<DetSymbol> numeratorSymbols;      // 分子のシンボル
         final List<DetSymbol> denominatorSymbols;    // 分母のシンボル
         final List<DetSymbol> beforeFractionSymbols;  // 分数線より前のシンボル
+        final List<DetSymbol> afterFractionSymbols;   // 分数線より後のシンボル
         
         FractionInfo(List<DetSymbol> numeratorSymbols, List<DetSymbol> denominatorSymbols, 
-                    List<DetSymbol> beforeFractionSymbols) {
+                    List<DetSymbol> beforeFractionSymbols, List<DetSymbol> afterFractionSymbols) {
             this.numeratorSymbols = numeratorSymbols;
             this.denominatorSymbols = denominatorSymbols;
             this.beforeFractionSymbols = beforeFractionSymbols;
+            this.afterFractionSymbols = afterFractionSymbols;
         }
     }
     
@@ -151,13 +153,25 @@ public class SpatialToExpr {
             // 分数線より前のシンボルを処理
             String beforeFractionExpr = processExpressionPart(fractionInfo.beforeFractionSymbols, warnings);
             
-            // 結果を結合: (beforeFraction) * (numerator) / (denominator)
+            // 分数線より後のシンボルを処理
+            String afterFractionExpr = processExpressionPart(fractionInfo.afterFractionSymbols, warnings);
+            
+            // 結果を結合: (beforeFraction) * (numerator) / (denominator) (afterFraction)
             // ただし、beforeFractionが空または"1"の場合は含めない
             List<String> resultTokens = new ArrayList<>();
+            
+            // 分数の前の式を追加
             if (!beforeFractionExpr.isEmpty() && !beforeFractionExpr.equals("1")) {
                 resultTokens.add(beforeFractionExpr);
-                resultTokens.add("*");
+                // 分数の前が数字や変数で終わる場合、掛け算を挿入
+                // 演算子で終わる場合は掛け算を挿入しない
+                char lastChar = beforeFractionExpr.charAt(beforeFractionExpr.length() - 1);
+                if (lastChar != '+' && lastChar != '-' && lastChar != '*' && lastChar != '/' && lastChar != '^') {
+                    resultTokens.add("*");
+                }
             }
+            
+            // 分数を追加
             resultTokens.add("(");
             resultTokens.add(numeratorExpr);
             resultTokens.add(")");
@@ -165,6 +179,17 @@ public class SpatialToExpr {
             resultTokens.add("(");
             resultTokens.add(denominatorExpr);
             resultTokens.add(")");
+            
+            // 分数の後の式を追加
+            if (!afterFractionExpr.isEmpty() && !afterFractionExpr.equals("1")) {
+                // 分数の後が演算子で始まる場合はそのまま追加
+                // 数字や変数で始まる場合は掛け算を挿入
+                char firstChar = afterFractionExpr.charAt(0);
+                if (firstChar != '+' && firstChar != '-' && firstChar != '*' && firstChar != '/' && firstChar != '^') {
+                    resultTokens.add("*");
+                }
+                resultTokens.add(afterFractionExpr);
+            }
             
             String expr = String.join("", resultTokens);
             if (unbalancedParen(expr)) warnings.add("括弧の対応が取れていません（検出ミスの可能性があります）");
@@ -1263,6 +1288,7 @@ public class SpatialToExpr {
                 List<DetSymbol> numeratorSymbols = new ArrayList<>();
                 List<DetSymbol> denominatorSymbols = new ArrayList<>();
                 List<DetSymbol> beforeFractionSymbols = new ArrayList<>();
+                List<DetSymbol> afterFractionSymbols = new ArrayList<>();
                 
                 // 分数線のx座標範囲
                 double fracLineLeft = fracLine.x1;
@@ -1274,6 +1300,10 @@ public class SpatialToExpr {
                 double fracBottom = fracLine.y2;
                 double fracCenterY = fracLine.cy();
                 double threshold = Math.max(fracLine.h() * 0.3, 5.0);
+                
+                // 分数の範囲を決定（分子と分母のx座標範囲を考慮）
+                double fractionMinX = fracLineLeft;
+                double fractionMaxX = fracRight;
                 
                 // すべてのシンボルをチェック
                 for (int j = 0; j < merged.size(); j++) {
@@ -1306,6 +1336,9 @@ public class SpatialToExpr {
                         if (otherBottom < fracTop - numeratorThreshold || 
                             (otherCenterY < fracCenterY - threshold && otherBottom < fracTop - threshold)) {
                             numeratorSymbols.add(otherSymbol);
+                            // 分数の範囲を更新
+                            fractionMinX = Math.min(fractionMinX, otherBox.x1);
+                            fractionMaxX = Math.max(fractionMaxX, otherBox.x2);
                         }
                         // 分母の判定：分数線の下にある
                         else {
@@ -1313,8 +1346,45 @@ public class SpatialToExpr {
                             if (otherTop > fracBottom + denominatorThreshold || 
                                 (otherCenterY > fracCenterY + threshold && otherTop > fracBottom + threshold)) {
                                 denominatorSymbols.add(otherSymbol);
+                                // 分数の範囲を更新
+                                fractionMinX = Math.min(fractionMinX, otherBox.x1);
+                                fractionMaxX = Math.max(fractionMaxX, otherBox.x2);
                             }
                         }
+                    }
+                }
+                
+                // 分数線より後（右側）のシンボルを検出
+                // 分数の範囲外で、かつ分数線より右側にあるシンボル
+                for (int j = 0; j < merged.size(); j++) {
+                    if (j == i) continue; // 分数線自体はスキップ
+                    
+                    DetSymbol otherSymbol = merged.get(j);
+                    BBox otherBox = otherSymbol.box;
+                    
+                    // 既に分子、分母、または前のシンボルとして分類されている場合はスキップ
+                    if (numeratorSymbols.contains(otherSymbol) || 
+                        denominatorSymbols.contains(otherSymbol) || 
+                        beforeFractionSymbols.contains(otherSymbol)) {
+                        continue;
+                    }
+                    
+                    double otherCenterX = otherBox.cx();
+                    
+                    // 分数の範囲より右側にあるシンボルを検出
+                    // ただし、分数線の上下にあるシンボルは除外（分子・分母として既に処理済み）
+                    double otherCenterY = otherBox.cy();
+                    double otherTop = otherBox.y1;
+                    double otherBottom = otherBox.y2;
+                    
+                    // 分数線の上下の範囲外にあるシンボルのみを「後のシンボル」として扱う
+                    boolean isInFractionVerticalRange = 
+                        (otherCenterY >= fracTop - threshold && otherCenterY <= fracBottom + threshold) ||
+                        (otherTop < fracTop - threshold && otherBottom > fracBottom + threshold);
+                    
+                    // 分数の範囲より右側で、かつ分数線の上下の範囲外にあるシンボル
+                    if (otherCenterX > fractionMaxX && !isInFractionVerticalRange) {
+                        afterFractionSymbols.add(otherSymbol);
                     }
                 }
                 
@@ -1322,6 +1392,7 @@ public class SpatialToExpr {
                 numeratorSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
                 denominatorSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
                 beforeFractionSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
+                afterFractionSymbols.sort(Comparator.comparingDouble(a -> a.box.cx()));
                 
                 // デバッグ情報を追加
                 StringBuilder debugInfo = new StringBuilder();
@@ -1341,12 +1412,28 @@ public class SpatialToExpr {
                         debugInfo.append(sym.token).append("(").append(String.format("%.1f", sym.box.cy())).append(") ");
                     }
                 }
+                debugInfo.append(", 前=");
+                if (beforeFractionSymbols.isEmpty()) {
+                    debugInfo.append("なし");
+                } else {
+                    for (DetSymbol sym : beforeFractionSymbols) {
+                        debugInfo.append(sym.token).append(" ");
+                    }
+                }
+                debugInfo.append(", 後=");
+                if (afterFractionSymbols.isEmpty()) {
+                    debugInfo.append("なし");
+                } else {
+                    for (DetSymbol sym : afterFractionSymbols) {
+                        debugInfo.append(sym.token).append(" ");
+                    }
+                }
                 debugInfo.append(", 分数線y=").append(String.format("%.1f", fracCenterY));
                 warnings.add(debugInfo.toString());
                 
                 // 分子または分母が見つかった場合、分数情報を返す
                 if (!numeratorSymbols.isEmpty() || !denominatorSymbols.isEmpty()) {
-                    return new FractionInfo(numeratorSymbols, denominatorSymbols, beforeFractionSymbols);
+                    return new FractionInfo(numeratorSymbols, denominatorSymbols, beforeFractionSymbols, afterFractionSymbols);
                 }
             }
         }
