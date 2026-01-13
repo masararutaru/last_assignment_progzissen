@@ -1309,7 +1309,7 @@ public class SpatialToExpr {
                         }
                         // 分母の判定：分数線の下にある
                         else {
-                            double denominatorThreshold = Math.max(fracLine.h() * 0.5, 10.0);
+                            double denominatorThreshold = Math.max(fracLine.h() * 0.5, 5.0);
                             if (otherTop > fracBottom + denominatorThreshold || 
                                 (otherCenterY > fracCenterY + threshold && otherTop > fracBottom + threshold)) {
                                 denominatorSymbols.add(otherSymbol);
