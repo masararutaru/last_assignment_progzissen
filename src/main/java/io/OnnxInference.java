@@ -366,6 +366,11 @@ public class OnnxInference implements AutoCloseable {
                 // スコア計算: objectness * classScore
                 double baseScore = objectness * classScore;
                 
+                // 「(」のクラスID 42の認識を強化するため、0.25を加算
+                if (c == 42) {  // クラスID 42 = "("
+                    baseScore += 0.25;
+                }
+                
                 // 上位2つのクラスを記録（)と(の誤認識を防ぐため）
                 if (baseScore > maxScore) {
                     secondBestScore = maxScore;
