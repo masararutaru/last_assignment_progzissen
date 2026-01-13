@@ -36,4 +36,3 @@ echo "DISPLAY=$DISPLAY で実行します"
 echo ""
 
 java -cp "$CLASSPATH" io.MathExpressionGUI
-
