@@ -163,9 +163,10 @@ public class SpatialToExpr {
             // 分数の前の式を追加
             if (!beforeFractionExpr.isEmpty() && !beforeFractionExpr.equals("1")) {
                 resultTokens.add(beforeFractionExpr);
-                // 分数の前が数字や変数で終わる場合、掛け算を挿入
+                // 分数の前が数字、変数、または閉じ括弧で終わる場合、掛け算を挿入
                 // 演算子で終わる場合は掛け算を挿入しない
                 char lastChar = beforeFractionExpr.charAt(beforeFractionExpr.length() - 1);
+                // 演算子でない場合（数字、変数、閉じ括弧など）は掛け算を挿入
                 if (lastChar != '+' && lastChar != '-' && lastChar != '*' && lastChar != '/' && lastChar != '^') {
                     resultTokens.add("*");
                 }
@@ -183,8 +184,9 @@ public class SpatialToExpr {
             // 分数の後の式を追加
             if (!afterFractionExpr.isEmpty() && !afterFractionExpr.equals("1")) {
                 // 分数の後が演算子で始まる場合はそのまま追加
-                // 数字や変数で始まる場合は掛け算を挿入
+                // 数字、変数、または開き括弧で始まる場合は掛け算を挿入
                 char firstChar = afterFractionExpr.charAt(0);
+                // 演算子でない場合（数字、変数、開き括弧など）は掛け算を挿入
                 if (firstChar != '+' && firstChar != '-' && firstChar != '*' && firstChar != '/' && firstChar != '^') {
                     resultTokens.add("*");
                 }
@@ -1324,6 +1326,7 @@ public class SpatialToExpr {
                     double otherBottom = otherBox.y2;
                     
                     // 分数線より前（左側）のシンボル
+                    // 括弧も含めてすべてのシンボルを検出
                     if (otherCenterX < fracLineLeft) {
                         beforeFractionSymbols.add(otherSymbol);
                         continue;
@@ -1361,6 +1364,7 @@ public class SpatialToExpr {
                     
                     DetSymbol otherSymbol = merged.get(j);
                     BBox otherBox = otherSymbol.box;
+                    String otherToken = otherSymbol.token;
                     
                     // 既に分子、分母、または前のシンボルとして分類されている場合はスキップ
                     if (numeratorSymbols.contains(otherSymbol) || 
@@ -1383,7 +1387,13 @@ public class SpatialToExpr {
                         (otherTop < fracTop - threshold && otherBottom > fracBottom + threshold);
                     
                     // 分数の範囲より右側で、かつ分数線の上下の範囲外にあるシンボル
+                    // 括弧も含めてすべてのシンボルを検出
                     if (otherCenterX > fractionMaxX && !isInFractionVerticalRange) {
+                        afterFractionSymbols.add(otherSymbol);
+                    }
+                    // 分数の範囲より右側で、括弧の場合は垂直範囲のチェックを緩和
+                    // 括弧は分数の上下の範囲外にあることが多いため
+                    else if (otherCenterX > fractionMaxX && (otherToken.equals("(") || otherToken.equals(")"))) {
                         afterFractionSymbols.add(otherSymbol);
                     }
                 }
