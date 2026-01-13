@@ -48,8 +48,14 @@ public class Tokenizer {
                 while (j < n && (Character.isLetterOrDigit(s.charAt(j)) || s.charAt(j) == '_')) j++;
                 String id = s.substring(i, j);
 
-                if (FUNCS.contains(id)) out.add(Token.func(id));
-                else out.add(Token.sym(id)); // 変数（a-z）
+                if (FUNCS.contains(id)) {
+                    out.add(Token.func(id));
+                } else if (id.equals("e") && CONSTANTS.contains("e")) {
+                    // eを定数として扱う（記号として保持）
+                    out.add(Token.sym("e"));
+                } else {
+                    out.add(Token.sym(id)); // 変数（a-z、ただしeは除く）
+                }
 
                 i = j;
                 continue;
@@ -58,12 +64,8 @@ public class Tokenizer {
             // 特殊文字（π, θ, ∞, →, √）
             if (c == 'π' || c == 'θ' || c == '∞') {
                 String constName = String.valueOf(c);
-                if (CONSTANTS.contains(constName)) {
-                    // 定数として扱う（数値ノードに変換される）
-                    out.add(Token.num(getConstantValue(constName)));
-                } else {
-                    out.add(Token.sym(constName));
-                }
+                // 定数として記号として保持（数値に変換しない）
+                out.add(Token.sym(constName));
                 i++;
                 continue;
             }
@@ -101,18 +103,6 @@ public class Tokenizer {
         }
 
         return out;
-    }
-    
-    /**
-     * 定数の値を取得
-     */
-    private static double getConstantValue(String constName) {
-        switch (constName) {
-            case "π": return Math.PI;
-            case "e": return Math.E;
-            case "∞": return Double.POSITIVE_INFINITY;
-            default: throw new IllegalArgumentException("Unknown constant: " + constName);
-        }
     }
 }
 
